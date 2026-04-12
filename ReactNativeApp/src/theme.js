@@ -2,6 +2,10 @@ export const colors = {
   primary: '#5f5e5e',
   onPrimary: '#ffffff',
 
+  /** Full-screen landing / brand hero (design spec) */
+  brandLanding: '#105D4B',
+  brandLandingDim: '#0d4a3c',
+
   secondary: '#006c5c',
   secondaryDim: '#005e51',
   onSecondary: '#e3fff6',

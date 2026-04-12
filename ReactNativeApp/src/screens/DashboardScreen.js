@@ -8,11 +8,13 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -80,7 +82,37 @@ const NAV_ITEMS = [
   { key: 'profile', label: 'Profile', icon: 'person', active: false },
 ];
 
+/** Keeps header compact so action icons stay on-screen (E.164 is very long). */
+function compactDisplayName(raw) {
+  if (!raw) return 'Member';
+  if (typeof raw === 'string' && raw.startsWith('+')) {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `•••• ${digits.slice(-4)}`;
+    }
+  }
+  if (raw.length > 22) {
+    return `${raw.slice(0, 20)}…`;
+  }
+  return raw;
+}
+
 function TopAppBar({ insets }) {
+  const { user, logout } = useAuth();
+  const displayName =
+    user?.full_name && user.full_name !== 'Member'
+      ? compactDisplayName(user.full_name)
+      : user?.phone
+        ? compactDisplayName(user.phone)
+        : 'Member';
+
+  const onLogout = () => {
+    Alert.alert('Log out', 'Sign out of WealthSplit on this device?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log out', style: 'destructive', onPress: () => logout() },
+    ]);
+  };
+
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.topBarInner}>
@@ -88,14 +120,26 @@ function TopAppBar({ insets }) {
           <View style={styles.avatarContainer}>
             <Image source={{ uri: PROFILE_URL }} style={styles.profileAvatar} />
           </View>
-          <View>
+          <View style={styles.profileTextCol}>
             <Text style={styles.welcomeLabel}>Welcome back,</Text>
-            <Text style={styles.userName}>Morning Hakim</Text>
+            <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
+              {displayName}
+            </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
-          <MaterialIcons name="notifications-none" size={24} color={colors.onSurface} />
-        </TouchableOpacity>
+        <View style={styles.topBarActions}>
+          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
+            <MaterialIcons name="notifications-none" size={24} color={colors.onSurface} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            activeOpacity={0.7}
+            onPress={onLogout}
+            accessibilityLabel="Log out"
+          >
+            <MaterialIcons name="logout" size={22} color={colors.onSurfaceVariant} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -349,10 +393,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 12,
   },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
   profileRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  profileTextCol: {
+    flex: 1,
+    minWidth: 0,
   },
   avatarContainer: {
     width: 40,
