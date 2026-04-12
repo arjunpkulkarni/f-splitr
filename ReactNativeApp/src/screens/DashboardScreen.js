@@ -409,10 +409,11 @@ function RecentActivitySection({ activities, onItemPress }) {
   if (!activities || activities.length === 0) {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
+        <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>Recent Activity</Text>
         <View style={[styles.emptyCard, shadows.card]}>
           <MaterialIcons name="history" size={40} color={colors.outlineVariant} />
           <Text style={styles.emptyText}>No recent activity</Text>
+          <Text style={styles.emptySubtext}>Your bill activity will appear here</Text>
         </View>
       </View>
     );
@@ -420,7 +421,7 @@ function RecentActivitySection({ activities, onItemPress }) {
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Recent Activity</Text>
+      <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>Recent Activity</Text>
       <View style={[styles.activityCard, shadows.card]}>
         {activities.map((item, i) => (
           <ActivityItem
@@ -441,7 +442,15 @@ function FloatingActionButton({ tabBarHeight, onPress, loading }) {
       activeOpacity={0.85}
       onPress={onPress}
       disabled={loading}
-      style={[styles.fab, shadows.fab, { bottom: tabBarHeight + 16 }]}
+      style={[
+        styles.fab,
+        shadows.fab,
+        {
+          position: 'absolute',
+          right: 24,
+          bottom: tabBarHeight + 16,
+        },
+      ]}
     >
       <LinearGradient
         colors={[colors.secondary, colors.secondaryDim]}
@@ -484,8 +493,10 @@ export default function DashboardScreen({ navigation }) {
       setOverview(overviewRes.data);
       setActiveBills(billsRes.data ?? []);
       setRecentActivity(activityRes.data ?? []);
-    } catch {
-      // silently fail — show whatever data we have
+    } catch (error) {
+      console.warn('Dashboard fetch error:', error);
+      setActiveBills([]);
+      setRecentActivity([]);
     }
   }, []);
 
@@ -995,8 +1006,6 @@ const styles = StyleSheet.create({
   },
 
   fab: {
-    position: 'absolute',
-    right: 24,
     zIndex: 40,
   },
   fabGradient: {
