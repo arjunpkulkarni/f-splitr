@@ -24,13 +24,18 @@ function logAxiosFailure(error) {
   if (Platform.OS === 'android' && base.includes('10.0.2.2')) {
     hints.push('Android emulator: 10.0.2.2 maps to host localhost.');
   }
+  const body = error.response?.data;
   console.warn('[SPLTR API] request failed', {
     message: error.message,
     code: error.code,
     method: cfg?.method?.toUpperCase(),
     fullUrl,
     status: error.response?.status,
-    hints,
+    serverError: body?.error,
+    hints:
+      error.response?.status && error.response.status < 500
+        ? [] // response reached the API; localhost hints are usually irrelevant
+        : hints,
   });
 }
 

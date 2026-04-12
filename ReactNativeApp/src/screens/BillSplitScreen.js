@@ -26,6 +26,11 @@ function parsePriceValue(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+/** Round to cents for money math after quantity × unit changes. */
+function roundMoney(n) {
+  return Math.round(n * 100) / 100;
+}
+
 function formatPriceInput(value) {
   const digitsOnly = `${value ?? ''}`.replace(/\D/g, '');
   if (!digitsOnly) return '0.00';
@@ -297,9 +302,15 @@ function EmptyItems({ onScanReceipt, billId }) {
   );
 }
 
-function BottomActions({ insets, items, assignmentMap, itemPrices, onSend }) {
-  const totalItems = items.length;
-  const assignedItems = items.filter((i) => (assignmentMap[i.id] || []).length > 0).length;
+function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantities, onSend }) {
+  const qtyFor = (i) => itemQuantities[i.id] ?? i.quantity ?? 0;
+  const totalLines = items.length;
+  const assignedLines = items.filter((i) => (assignmentMap[i.id] || []).length > 0).length;
+  const totalUnits = items.reduce((sum, i) => sum + qtyFor(i), 0);
+  const assignedUnits = items
+    .filter((i) => (assignmentMap[i.id] || []).length > 0)
+    .reduce((sum, i) => sum + qtyFor(i), 0);
+
   const subtotal = items.reduce((sum, i) => {
     if ((assignmentMap[i.id] || []).length > 0) {
       return sum + parsePriceValue(itemPrices[i.id] ?? i.total_price);
@@ -307,10 +318,15 @@ function BottomActions({ insets, items, assignmentMap, itemPrices, onSend }) {
     return sum;
   }, 0);
 
+  const assignmentLabel =
+    totalUnits !== totalLines
+      ? `${assignedLines} of ${totalLines} lines · ${assignedUnits} of ${totalUnits} units assigned`
+      : `${assignedLines} of ${totalLines} lines assigned`;
+
   return (
     <View style={[styles.bottomActions, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
       <View style={styles.subtotalRow}>
-        <Text style={styles.assignedCount}>{assignedItems} of {totalItems} Items Assigned</Text>
+        <Text style={styles.assignedCount}>{assignmentLabel}</Text>
         <Text style={styles.subtotalText}>Subtotal: {formatCurrency(subtotal)}</Text>
       </View>
       <TouchableOpacity activeOpacity={0.85} onPress={onSend}>
@@ -426,19 +442,36 @@ export default function BillSplitScreen({ navigation, route }) {
     });
   };
 
-  const handleIncrementQuantity = (itemId) => {
-    setItemQuantities((prev) => ({
-      ...prev,
-      [itemId]: (prev[itemId] ?? 0) + 1,
-    }));
-  };
+  const adjustItemQuantity = useCallback(
+    (itemId, delta) => {
+      setItemQuantities((prevQ) => {
+        const item = items.find((i) => i.id === itemId);
+        const oldQ = prevQ[itemId] ?? item?.quantity ?? 0;
+        const newQ = Math.max(0, oldQ + delta);
 
-  const handleDecrementQuantity = (itemId) => {
-    setItemQuantities((prev) => ({
-      ...prev,
-      [itemId]: Math.max(0, (prev[itemId] ?? 0) - 1),
-    }));
-  };
+        setItemPrices((prevP) => {
+          const lineStr =
+            prevP[itemId] ?? parsePriceValue(item?.total_price ?? 0).toFixed(2);
+          const lineTotal = parsePriceValue(lineStr);
+          let newLine = lineTotal;
+          if (oldQ > 0 && newQ > 0) {
+            const unit = lineTotal / oldQ;
+            newLine = roundMoney(unit * newQ);
+          } else if (oldQ > 0 && newQ === 0) {
+            newLine = lineTotal;
+          }
+          return { ...prevP, [itemId]: newLine.toFixed(2) };
+        });
+
+        return { ...prevQ, [itemId]: newQ };
+      });
+    },
+    [items],
+  );
+
+  const handleIncrementQuantity = (itemId) => adjustItemQuantity(itemId, 1);
+
+  const handleDecrementQuantity = (itemId) => adjustItemQuantity(itemId, -1);
 
   const handleRemoveItem = (itemId) => {
     setRemovedItemIds((prev) => ({
@@ -594,7 +627,7 @@ export default function BillSplitScreen({ navigation, route }) {
       applyServerItemState(res.data.bill, res.data.items ?? [], true);
       setIsEditingItems(false);
     } catch (err) {
-      Alert.alert('Error', err?.error?.message ?? 'Failed to save receipt edits');
+      Alert.alert('Error', err?.message ?? err?.error?.message ?? 'Failed to save receipt edits');
     } finally {
       setSavingItemEdits(false);
     }
@@ -767,6 +800,7 @@ export default function BillSplitScreen({ navigation, route }) {
           items={visibleItems}
           assignmentMap={assignmentMap}
           itemPrices={itemPrices}
+          itemQuantities={itemQuantities}
           onSend={handleSend}
         />
       )}
@@ -1243,10 +1277,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     paddingHorizontal: 4,
+    gap: 12,
   },
   assignedCount: {
+    flex: 1,
     fontFamily: 'Inter_500Medium',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: colors.onSurfaceVariant,
   },

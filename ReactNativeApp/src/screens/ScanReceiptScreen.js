@@ -148,7 +148,7 @@ export default function ScanReceiptScreen({ navigation, route }) {
       setUploading(false);
       setParsing(false);
       setStatusText('Position receipt in frame');
-      Alert.alert('Error', err?.error?.message ?? 'Failed to process receipt');
+      Alert.alert('Error', err?.message ?? err?.error?.message ?? 'Failed to process receipt');
     }
   };
 
