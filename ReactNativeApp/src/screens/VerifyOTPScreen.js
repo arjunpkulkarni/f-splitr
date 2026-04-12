@@ -27,6 +27,9 @@ function mapVerifyError(code, fallback) {
     RATE_LIMIT_EXCEEDED: 'Too many attempts. Wait a moment and try again.',
     PROVIDER_ERROR: 'Verification failed. Try again.',
     NETWORK_ERROR: 'Connection problem. Check your network.',
+    PHONE_ALREADY_REGISTERED: 'This number already has an account. Use Log In.',
+    PHONE_NOT_REGISTERED: 'No account for this number yet. Use Get Started to sign up.',
+    NAME_REQUIRED: 'Enter your first name on the sign-up screen.',
   };
   return map[code] ?? fallback ?? 'Verification failed.';
 }
@@ -36,6 +39,7 @@ export default function VerifyOTPScreen({ navigation, route }) {
   const { completePhoneAuth } = useAuth();
   const phone = route.params?.phone ?? '';
   const firstName = (route.params?.firstName ?? '').trim();
+  const mode = route.params?.mode === 'login' ? 'login' : 'signup';
   const [otpDevMode, setOtpDevMode] = useState(Boolean(route.params?.otpDevMode));
   const inputRef = useRef(null);
 
@@ -57,15 +61,34 @@ export default function VerifyOTPScreen({ navigation, route }) {
     return () => clearInterval(id);
   }, [cooldown]);
 
+  const otpIntent = mode === 'login' ? 'login' : 'signup';
+
   const onVerify = async () => {
-    if (code.length !== 6 || loading || !phone || !firstName) return;
+    if (code.length !== 6 || loading || !phone) return;
+    if (mode === 'signup' && !firstName.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      await completePhoneAuth(phone, code, firstName);
+      await completePhoneAuth(
+        phone,
+        code,
+        mode === 'login' ? '' : firstName,
+        otpIntent,
+      );
     } catch (err) {
       const c = err instanceof ApiError ? err.code : 'ERROR';
       const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
+      if (c === 'PHONE_ALREADY_REGISTERED') {
+        navigation.replace('Login', {
+          prefillE164: phone,
+          redirectReason: 'existing_account',
+        });
+        return;
+      }
+      if (c === 'PHONE_NOT_REGISTERED') {
+        navigation.replace('PhoneAuth', { prefillE164: phone });
+        return;
+      }
       setError(mapVerifyError(c, msg));
     } finally {
       setLoading(false);
@@ -76,7 +99,7 @@ export default function VerifyOTPScreen({ navigation, route }) {
     if (cooldown > 0 || !phone || loading) return;
     setError(null);
     try {
-      const body = await authApi.sendOtp(phone);
+      const body = await authApi.sendOtp(phone, otpIntent);
       const data = unwrap(body);
       setOtpDevMode(Boolean(data?.otp_dev_mode));
       setCooldown(COOLDOWN_SEC);
@@ -93,7 +116,8 @@ export default function VerifyOTPScreen({ navigation, route }) {
     setError(null);
   };
 
-  const canVerify = code.length === 6 && !loading && Boolean(firstName);
+  const canVerify =
+    code.length === 6 && !loading && (mode === 'login' || Boolean(firstName.trim()));
 
   const masked = useCallback(() => {
     if (!phone || phone.length < 4) return phone;
@@ -133,7 +157,7 @@ export default function VerifyOTPScreen({ navigation, route }) {
           <Text style={styles.phoneEm}>{masked()}</Text>
         </Text>
 
-        {!firstName ? (
+        {mode === 'signup' && !firstName ? (
           <Text style={styles.nameMissing}>
             Go back and enter your first name to finish signing up.
           </Text>

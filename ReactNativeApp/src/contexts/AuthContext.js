@@ -25,8 +25,8 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  const completePhoneAuth = useCallback(async (phone, code, firstName) => {
-    const body = await authApi.verifyOtp(phone, code, firstName);
+  const completePhoneAuth = useCallback(async (phone, code, firstName, intent) => {
+    const body = await authApi.verifyOtp(phone, code, firstName, intent);
     const data = unwrap(body);
     const token = data.access_token ?? data.token;
     if (!token) throw new Error('No token returned');

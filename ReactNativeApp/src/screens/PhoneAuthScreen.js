@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -38,16 +38,25 @@ function mapErrorMessage(code, fallback) {
     RATE_LIMIT_EXCEEDED: 'Too many attempts. Try again in a little while.',
     PROVIDER_ERROR: 'We could not send a code. Try again later.',
     NETWORK_ERROR: 'Connection problem. Check your network and try again.',
+    PHONE_ALREADY_REGISTERED:
+      'This number already has an account. We switched you to Log In.',
   };
   return map[code] ?? fallback ?? 'Something went wrong.';
 }
 
-export default function PhoneAuthScreen({ navigation }) {
+export default function PhoneAuthScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
   const [national, setNational] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const pre = route.params?.prefillE164;
+    if (!pre || typeof pre !== 'string') return;
+    const digits = pre.replace(/^\+1/, '').replace(/\D/g, '').slice(0, 10);
+    if (digits.length === 10) setNational(formatUsNational(digits));
+  }, [route.params?.prefillE164]);
 
   const e164 = useMemo(() => toE164Us10(national), [national]);
   const nameOk = firstName.trim().length > 0;
@@ -68,16 +77,24 @@ export default function PhoneAuthScreen({ navigation }) {
     setLoading(true);
     setError(null);
     try {
-      const body = await authApi.sendOtp(e164);
+      const body = await authApi.sendOtp(e164, 'signup');
       const data = unwrap(body);
       navigation.navigate('VerifyOTP', {
         phone: e164,
         firstName: firstName.trim(),
+        mode: 'signup',
         otpDevMode: Boolean(data?.otp_dev_mode),
       });
     } catch (err) {
       const code = err instanceof ApiError ? err.code : 'ERROR';
       const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
+      if (code === 'PHONE_ALREADY_REGISTERED') {
+        navigation.replace('Login', {
+          prefillE164: e164,
+          redirectReason: 'existing_account',
+        });
+        return;
+      }
       setError(mapErrorMessage(code, msg));
     } finally {
       setLoading(false);

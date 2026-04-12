@@ -90,10 +90,20 @@ export function unwrap(body) {
 
 /** Phone OTP + email auth + profile (single object for imports). */
 export const authApi = {
-  sendOtp: (phone) => client.post('/auth/send-otp', { phone }),
+  /** @param {'signup'|'login'|null|undefined} intent — null/undefined keeps legacy API behavior */
+  sendOtp: (phone, intent) =>
+    client.post('/auth/send-otp', {
+      phone,
+      ...(intent ? { intent } : {}),
+    }),
 
-  verifyOtp: (phone, code, firstName) =>
-    client.post('/auth/verify-otp', { phone, code, first_name: firstName }),
+  verifyOtp: (phone, code, firstName = '', intent) =>
+    client.post('/auth/verify-otp', {
+      phone,
+      code,
+      first_name: firstName ?? '',
+      ...(intent ? { intent } : {}),
+    }),
 
   signup: (email, password, fullName) =>
     client.post('/auth/signup', { email, password, full_name: fullName }),

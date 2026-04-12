@@ -13,10 +13,19 @@ export default function LandingScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const navLock = useRef(false);
 
-  const goToPhone = useCallback(() => {
+  const goToSignup = useCallback(() => {
     if (navLock.current) return;
     navLock.current = true;
     navigation.navigate('PhoneAuth');
+    setTimeout(() => {
+      navLock.current = false;
+    }, 600);
+  }, [navigation]);
+
+  const goToLogin = useCallback(() => {
+    if (navLock.current) return;
+    navLock.current = true;
+    navigation.navigate('Login');
     setTimeout(() => {
       navLock.current = false;
     }, 600);
@@ -40,9 +49,9 @@ export default function LandingScreen({ navigation }) {
       </View>
 
       <View style={[styles.ctaColumn, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <LandingCtaButton label="Get Started" variant="primary" onPress={goToPhone} />
+        <LandingCtaButton label="Get Started" variant="primary" onPress={goToSignup} />
         <View style={{ height: spacing.md }} />
-        <LandingCtaButton label="Log In" variant="outline" onPress={goToPhone} />
+        <LandingCtaButton label="Log In" variant="outline" onPress={goToLogin} />
       </View>
     </View>
   );
