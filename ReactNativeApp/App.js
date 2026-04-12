@@ -22,7 +22,6 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import LandingScreen from './src/screens/LandingScreen';
 import PhoneAuthScreen from './src/screens/PhoneAuthScreen';
 import VerifyOTPScreen from './src/screens/VerifyOTPScreen';
-import DashboardScreen from './src/screens/DashboardScreen';
 
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
@@ -39,11 +38,25 @@ const MainStack = createNativeStackNavigator();
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStack.Navigator
+      screenOptions={{ headerShown: false }}
+      initialRouteName="Landing"
+    >
+      <AuthStack.Screen name="Landing" component={LandingScreen} />
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen
         name="Signup"
         component={SignupScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <AuthStack.Screen
+        name="PhoneAuth"
+        component={PhoneAuthScreen}
+        options={{ animation: 'fade' }}
+      />
+      <AuthStack.Screen
+        name="VerifyOTP"
+        component={VerifyOTPScreen}
         options={{ animation: 'slide_from_right' }}
       />
     </AuthStack.Navigator>
@@ -99,76 +112,6 @@ function RootNavigator() {
     );
   }
 
-const AuthStack = createNativeStackNavigator();
-const MainStack = createNativeStackNavigator();
-
-function AuthNavigator() {
-  return (
-    <AuthStack.Navigator
-      screenOptions={{ headerShown: false }}
-      initialRouteName="Landing"
-    >
-      <AuthStack.Screen name="Landing" component={LandingScreen} />
-      <AuthStack.Screen
-        name="PhoneAuth"
-        component={PhoneAuthScreen}
-        options={{
-          animation: 'fade',
-        }}
-      />
-      <AuthStack.Screen
-        name="VerifyOTP"
-        component={VerifyOTPScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-    </AuthStack.Navigator>
-  );
-}
-
-function MainNavigator() {
-  return (
-    <MainStack.Navigator screenOptions={{ headerShown: false }}>
-      <MainStack.Screen name="Dashboard" component={DashboardScreen} />
-      <MainStack.Screen
-        name="BillSplit"
-        component={BillSplitScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <MainStack.Screen
-        name="ReviewPayment"
-        component={ReviewPaymentScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <MainStack.Screen
-        name="ActivityDetail"
-        component={ActivityDetailScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <MainStack.Screen
-        name="ScanReceipt"
-        component={ScanReceiptScreen}
-        options={{ animation: 'slide_from_bottom' }}
-      />
-      <MainStack.Screen
-        name="FundsCollected"
-        component={FundsCollectedScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-    </MainStack.Navigator>
-  );
-}
-
-function RootNavigator() {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#006c5c" />
-      </View>
-    );
-  }
-
   return user ? <MainNavigator /> : <AuthNavigator />;
 }
 
@@ -204,14 +147,6 @@ export default function App() {
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer>
-          <StatusBar style="dark" />
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
-    </SafeAreaProvider>
   );
 }
 

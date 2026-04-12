@@ -5,21 +5,8 @@ import { getToken, removeToken } from './authStorage';
 const DEV_BASE =
   Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
 
-const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app';
-
-const client = axios.create({
-  baseURL: BASE_URL,
-  timeout: 20_000,
-  headers: { 'Content-Type': 'application/json' },
-});
-
-import { getToken, removeToken } from './auth';
-
-// Dev API host for local simulator development on the same machine as the backend.
-const DEV_BASE = 'http://localhost:8000';
-
 /** Dev/prod API origin — exported for debug logs (LoginScreen, etc.). */
-export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app'; // TODO: replace with prod URL
+export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app';
 
 function logAxiosFailure(error) {
   if (!__DEV__) return;
@@ -49,11 +36,10 @@ function logAxiosFailure(error) {
 
 const client = axios.create({
   baseURL: BASE_URL,
-  timeout: 15_000,
+  timeout: 20_000,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor: attach JWT ──────────────────────────────────────────
 client.interceptors.request.use(async (config) => {
   const token = await getToken();
   if (token) {
@@ -65,6 +51,7 @@ client.interceptors.request.use(async (config) => {
 client.interceptors.response.use(
   (response) => response.data,
   async (error) => {
+    logAxiosFailure(error);
     if (error.response?.status === 401) {
       await removeToken();
     }
@@ -96,29 +83,13 @@ export function unwrap(body) {
   return body.data;
 }
 
+/** Phone OTP + email auth + profile (single object for imports). */
 export const authApi = {
   sendOtp: (phone) => client.post('/auth/send-otp', { phone }),
 
   verifyOtp: (phone, code, firstName) =>
     client.post('/auth/verify-otp', { phone, code, first_name: firstName }),
-// ── Response interceptor: unwrap envelope & handle 401 ───────────────────────
-client.interceptors.response.use(
-  (response) => response.data,
-  async (error) => {
-    logAxiosFailure(error);
-    if (error.response?.status === 401) {
-      await removeToken();
-    }
-    const apiError = error.response?.data ?? {
-      status: 'error',
-      error: { code: 'NETWORK_ERROR', message: error.message },
-    };
-    return Promise.reject(apiError);
-  },
-);
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-export const auth = {
   signup: (email, password, fullName) =>
     client.post('/auth/signup', { email, password, full_name: fullName }),
 
@@ -136,6 +107,9 @@ export const auth = {
 
   logout: () => client.post('/auth/logout'),
 };
+
+/** Alias for older imports: `import { auth } from '../services/api'` */
+export const auth = authApi;
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 export const dashboard = {

@@ -56,7 +56,7 @@ export default function SignupScreen({ navigation }) {
           raw: err,
         });
       }
-      setError(err?.error?.message ?? 'Could not create account');
+      setError(err?.message ?? err?.error?.message ?? 'Could not create account');
     } finally {
       setLoading(false);
     }

@@ -50,7 +50,7 @@ export default function LoginScreen({ navigation }) {
           raw: err,
         });
       }
-      setError(err?.error?.message ?? 'Invalid email or password');
+      setError(err?.message ?? err?.error?.message ?? 'Invalid email or password');
     } finally {
       setLoading(false);
     }

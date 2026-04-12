@@ -10,12 +10,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { colors, radii, shadows, spacing } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
+import { bills, dashboard as dashboardApi, notifications as notificationsApi } from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -98,27 +102,6 @@ function compactDisplayName(raw) {
   return raw;
 }
 
-function TopAppBar({ insets }) {
-  const { user, logout } = useAuth();
-  const displayName =
-    user?.full_name && user.full_name !== 'Member'
-      ? compactDisplayName(user.full_name)
-      : user?.phone
-        ? compactDisplayName(user.phone)
-        : 'Member';
-
-  const onLogout = () => {
-    Alert.alert('Log out', 'Sign out of WealthSplit on this device?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => logout() },
-    ]);
-  };
-import { useFocusEffect } from '@react-navigation/native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { colors, radii, shadows } from '../theme';
-import { useAuth } from '../contexts/AuthContext';
-import { bills, dashboard as dashboardApi, notifications as notificationsApi } from '../services/api';
-
 const DRAFT_BILL_TITLE = 'Untitled Bill';
 
 const ACTIVITY_TYPE_META = {
@@ -154,12 +137,30 @@ function formatRelativeTime(timestamp) {
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function TopAppBar({ insets, user, onNotificationsPress, unreadCount }) {
-  const initials = (user?.full_name || '?')
-    .split(' ')
+  const { logout } = useAuth();
+
+  const displayName =
+    user?.full_name && user.full_name !== 'Member'
+      ? compactDisplayName(user.full_name)
+      : user?.phone
+        ? compactDisplayName(user.phone)
+        : 'Member';
+
+  const initials = (user?.full_name || user?.phone || '?')
+    .toString()
+    .split(/\s+/)
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .slice(0, 2)
-    .toUpperCase();
+    .toUpperCase() || '?';
+
+  const onLogout = () => {
+    Alert.alert('Log out', 'Sign out of WealthSplit on this device?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log out', style: 'destructive', onPress: () => logout() },
+    ]);
+  };
 
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -182,11 +183,25 @@ function TopAppBar({ insets, user, onNotificationsPress, unreadCount }) {
           </View>
         </View>
         <View style={styles.topBarActions}>
-          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
-            <MaterialIcons name="notifications-none" size={24} color={colors.onSurface} />
+          <TouchableOpacity
+            style={styles.iconButtonWrap}
+            activeOpacity={0.7}
+            onPress={onNotificationsPress}
+            accessibilityLabel="Notifications"
+          >
+            <MaterialIcons
+              name={unreadCount > 0 ? 'notifications-active' : 'notifications-none'}
+              size={24}
+              color={colors.onSurface}
+            />
+            {unreadCount > 0 ? (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.iconButton}
+            style={styles.iconButtonWrap}
             activeOpacity={0.7}
             onPress={onLogout}
             accessibilityLabel="Log out"
@@ -194,25 +209,6 @@ function TopAppBar({ insets, user, onNotificationsPress, unreadCount }) {
             <MaterialIcons name="logout" size={22} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
         </View>
-            <Text style={styles.userName}>{user?.full_name || 'User'}</Text>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={styles.iconButtonWrap}
-          activeOpacity={0.7}
-          onPress={onNotificationsPress}
-        >
-          <MaterialIcons
-            name={unreadCount > 0 ? 'notifications-active' : 'notifications-none'}
-            size={24}
-            color={colors.onSurface}
-          />
-          {unreadCount > 0 ? (
-            <View style={styles.notifBadge}>
-              <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-            </View>
-          ) : null}
-        </TouchableOpacity>
       </View>
     </View>
   );
