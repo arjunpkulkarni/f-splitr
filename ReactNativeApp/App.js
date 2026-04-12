@@ -23,11 +23,81 @@ import LandingScreen from './src/screens/LandingScreen';
 import PhoneAuthScreen from './src/screens/PhoneAuthScreen';
 import VerifyOTPScreen from './src/screens/VerifyOTPScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
+
+import LoginScreen from './src/screens/LoginScreen';
+import SignupScreen from './src/screens/SignupScreen';
 import BillSplitScreen from './src/screens/BillSplitScreen';
 import ReviewPaymentScreen from './src/screens/ReviewPaymentScreen';
 import ActivityDetailScreen from './src/screens/ActivityDetailScreen';
 import ScanReceiptScreen from './src/screens/ScanReceiptScreen';
 import FundsCollectedScreen from './src/screens/FundsCollectedScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
+import MainTabNavigator from './src/navigation/MainTabNavigator';
+
+const AuthStack = createNativeStackNavigator();
+const MainStack = createNativeStackNavigator();
+
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen
+        name="Signup"
+        component={SignupScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+    </AuthStack.Navigator>
+  );
+}
+
+function MainNavigator() {
+  return (
+    <MainStack.Navigator screenOptions={{ headerShown: false }}>
+      <MainStack.Screen name="MainTabs" component={MainTabNavigator} />
+      <MainStack.Screen
+        name="BillSplit"
+        component={BillSplitScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <MainStack.Screen
+        name="ReviewPayment"
+        component={ReviewPaymentScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <MainStack.Screen
+        name="ActivityDetail"
+        component={ActivityDetailScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <MainStack.Screen
+        name="ScanReceipt"
+        component={ScanReceiptScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <MainStack.Screen
+        name="FundsCollected"
+        component={FundsCollectedScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <MainStack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+    </MainStack.Navigator>
+  );
+}
+
+function RootNavigator() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#006c5c" />
+      </View>
+    );
+  }
 
 const AuthStack = createNativeStackNavigator();
 const MainStack = createNativeStackNavigator();
@@ -134,6 +204,14 @@ export default function App() {
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer>
+          <StatusBar style="dark" />
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 
