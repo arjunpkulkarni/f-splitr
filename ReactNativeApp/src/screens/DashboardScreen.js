@@ -570,7 +570,7 @@ export default function DashboardScreen({ navigation }) {
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 72, paddingBottom: tabBarHeight + 88 },
+          { paddingTop: insets.top + 72, paddingBottom: tabBarHeight + 24 },
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -760,7 +760,7 @@ const styles = StyleSheet.create({
   },
 
   section: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
