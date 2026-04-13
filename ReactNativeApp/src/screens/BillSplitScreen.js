@@ -9,12 +9,15 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Share,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows } from '../theme';
-import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, invites as invitesApi } from '../services/api';
+import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, members as membersApi } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import useBillWebSocket from '../hooks/useBillWebSocket';
 
 function formatCurrency(value) {
   const num = typeof value === 'string' ? parseFloat(value) : (value ?? 0);
@@ -53,7 +56,7 @@ function isDraftItemId(itemId) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function TopAppBar({ insets, onBack, title }) {
+function TopAppBar({ insets, onBack, title, onShare }) {
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.topBarInner}>
@@ -65,9 +68,13 @@ function TopAppBar({ insets, onBack, title }) {
           )}
           <Text style={styles.appTitle} numberOfLines={1}>{title || 'Split Bill'}</Text>
         </View>
-        <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
-          <MaterialIcons name="more-vert" size={24} color={colors.onSurface} />
-        </TouchableOpacity>
+        {onShare ? (
+          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={onShare}>
+            <MaterialIcons name="person-add" size={24} color={colors.secondary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.iconButton} />
+        )}
       </View>
     </View>
   );
@@ -88,20 +95,6 @@ function MerchantHeader({ bill }) {
         <Text style={styles.totalAmount}>{formatCurrency(bill.total)}</Text>
       </View>
     </View>
-  );
-}
-
-function MemberChip({ member, active, onPress }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
-    >
-      <Text style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextInactive]}>
-        {member.nickname}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -133,9 +126,9 @@ function QuantityEditor({ quantity, onDecrement, onIncrement }) {
 
 function BillItemCard({
   item,
-  members,
-  assignedMemberIds,
-  onToggleMember,
+  isClaimed,
+  claimCount,
+  onToggleClaim,
   isEditingItems,
   quantity,
   name,
@@ -146,16 +139,16 @@ function BillItemCard({
   onIncrementQuantity,
   onRemoveItem,
 }) {
-  const isUnassigned = assignedMemberIds.length === 0;
   const isZeroQuantity = isEditingItems && quantity === 0;
   const totalPrice = parsePriceValue(price ?? item.total_price);
   const unitPrice = quantity > 0 ? totalPrice / quantity : totalPrice;
+  const myShare = isClaimed && claimCount > 0 ? totalPrice / claimCount : 0;
 
   return (
     <View
       style={[
         styles.itemCard,
-        isUnassigned ? styles.itemCardUnassigned : styles.itemCardNormal,
+        isClaimed ? styles.itemCardClaimed : styles.itemCardNormal,
         isZeroQuantity && styles.itemCardZeroQuantity,
       ]}
     >
@@ -172,16 +165,10 @@ function BillItemCard({
           ) : (
             <Text style={styles.itemName}>{name}</Text>
           )}
-          {isUnassigned ? (
-            <Text style={styles.itemPriceUnassigned}>
-              Unassigned • {formatCurrency(totalPrice)}
-            </Text>
-          ) : (
-            <Text style={styles.itemPrice}>
-              {quantity > 1 ? `${quantity} × ${formatCurrency(unitPrice)} = ` : ''}
-              {formatCurrency(totalPrice)}
-            </Text>
-          )}
+          <Text style={styles.itemPrice}>
+            {quantity > 1 ? `${quantity} × ${formatCurrency(unitPrice)} = ` : ''}
+            {formatCurrency(totalPrice)}
+          </Text>
         </View>
         {isEditingItems ? (
           <QuantityEditor
@@ -189,15 +176,11 @@ function BillItemCard({
             onDecrement={onDecrementQuantity}
             onIncrement={onIncrementQuantity}
           />
-        ) : isUnassigned ? (
-          <View style={styles.unassignedIcon}>
-            <MaterialIcons name="priority-high" size={16} color={colors.onErrorContainer} />
+        ) : isClaimed ? (
+          <View style={styles.claimedBadge}>
+            <MaterialIcons name="check" size={16} color={colors.secondary} />
           </View>
-        ) : (
-          <View style={styles.assignedBadge}>
-            <Text style={styles.assignedBadgeText}>{quantity}</Text>
-          </View>
-        )}
+        ) : null}
       </View>
       {isZeroQuantity && (
         <TouchableOpacity
@@ -209,19 +192,34 @@ function BillItemCard({
         </TouchableOpacity>
       )}
 
-      <View style={[styles.itemCardFooter, isEditingItems && styles.itemCardFooterEditing]}>
-        <View style={styles.chipRow}>
-          {members.map((m) => (
-            <MemberChip
-              key={m.id}
-              member={m}
-              active={assignedMemberIds.includes(m.id)}
-              onPress={() => onToggleMember(item.id, m.id)}
+      {!isEditingItems && (
+        <View style={styles.itemCardFooter}>
+          <TouchableOpacity
+            onPress={onToggleClaim}
+            activeOpacity={0.8}
+            style={[styles.claimToggle, isClaimed && styles.claimToggleActive]}
+          >
+            <MaterialIcons
+              name={isClaimed ? 'check-circle' : 'radio-button-unchecked'}
+              size={18}
+              color={isClaimed ? colors.onSecondary : colors.onSurfaceVariant}
             />
-          ))}
+            <Text style={[styles.claimToggleText, isClaimed && styles.claimToggleTextActive]}>
+              I had this
+            </Text>
+          </TouchableOpacity>
+          {claimCount > 0 && (
+            <Text style={styles.claimInfoText}>
+              {claimCount === 1 && isClaimed
+                ? 'Only you'
+                : `${claimCount} ${claimCount === 1 ? 'person' : 'people'}${isClaimed ? ` · ${formatCurrency(myShare)} each` : ''}`}
+            </Text>
+          )}
         </View>
+      )}
 
-        {isEditingItems && (
+      {isEditingItems && (
+        <View style={styles.itemCardFooterEditing}>
           <View style={styles.priceEditorWrap}>
             <Text style={styles.priceEditorLabel}>Price</Text>
             <View style={styles.priceEditorField}>
@@ -236,45 +234,44 @@ function BillItemCard({
               />
             </View>
           </View>
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 }
 
-function MembersSummary({ members, items, assignmentMap, itemPrices }) {
-  const memberTotals = members.map((m) => {
-    let total = 0;
-    let itemCount = 0;
-    items.forEach((item) => {
-      const assignees = assignmentMap[item.id] || [];
-      if (assignees.includes(m.id)) {
-        total += parsePriceValue(itemPrices[item.id] ?? item.total_price) / assignees.length;
-        itemCount++;
-      }
-    });
-    return { ...m, total, itemCount };
+function MyShareSummary({ myMemberId, items, assignmentMap, itemPrices }) {
+  let total = 0;
+  let itemCount = 0;
+  items.forEach((item) => {
+    const assignees = assignmentMap[item.id] || [];
+    if (assignees.includes(myMemberId)) {
+      total += parsePriceValue(itemPrices[item.id] ?? item.total_price) / assignees.length;
+      itemCount++;
+    }
   });
 
   return (
     <View style={styles.membersSection}>
-      <Text style={styles.membersTitle}>Members</Text>
-      {memberTotals.map((m) => (
-        <View key={m.id} style={styles.memberRow}>
-          <View style={styles.memberLeft}>
-            <View style={styles.memberAvatarWrap}>
-              <MaterialIcons name="person" size={20} color={colors.onSurfaceVariant} />
-            </View>
-            <View>
-              <Text style={styles.memberName}>{m.nickname}</Text>
-              <Text style={styles.memberItemCount}>
-                {m.itemCount} {m.itemCount === 1 ? 'Item' : 'Items'}
-              </Text>
-            </View>
+      <Text style={styles.membersTitle}>Your Share</Text>
+      <View style={styles.memberRow}>
+        <View style={styles.memberLeft}>
+          <View style={styles.memberAvatarWrap}>
+            <MaterialIcons name="receipt-long" size={20} color={colors.secondary} />
           </View>
-          <Text style={styles.memberAmount}>{formatCurrency(m.total)}</Text>
+          <View>
+            <Text style={styles.memberName}>
+              {itemCount} {itemCount === 1 ? 'item' : 'items'} selected
+            </Text>
+            <Text style={styles.memberItemCount}>
+              {itemCount === 0
+                ? 'Tap "I had this" on items you ordered'
+                : 'Your portion after splitting shared items'}
+            </Text>
+          </View>
         </View>
-      ))}
+        <Text style={styles.memberAmount}>{formatCurrency(total)}</Text>
+      </View>
     </View>
   );
 }
@@ -302,41 +299,33 @@ function EmptyItems({ onScanReceipt, billId }) {
   );
 }
 
-function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantities, onSend }) {
-  const qtyFor = (i) => itemQuantities[i.id] ?? i.quantity ?? 0;
-  const totalLines = items.length;
-  const assignedLines = items.filter((i) => (assignmentMap[i.id] || []).length > 0).length;
-  const totalUnits = items.reduce((sum, i) => sum + qtyFor(i), 0);
-  const assignedUnits = items
-    .filter((i) => (assignmentMap[i.id] || []).length > 0)
-    .reduce((sum, i) => sum + qtyFor(i), 0);
-
-  const subtotal = items.reduce((sum, i) => {
-    if ((assignmentMap[i.id] || []).length > 0) {
-      return sum + parsePriceValue(itemPrices[i.id] ?? i.total_price);
+function BottomActions({ insets, items, assignmentMap, itemPrices, myMemberId, onConfirm, isOwner }) {
+  let myTotal = 0;
+  let myItemCount = 0;
+  items.forEach((item) => {
+    const assignees = assignmentMap[item.id] || [];
+    if (assignees.includes(myMemberId)) {
+      myTotal += parsePriceValue(itemPrices[item.id] ?? item.total_price) / assignees.length;
+      myItemCount++;
     }
-    return sum;
-  }, 0);
-
-  const assignmentLabel =
-    totalUnits !== totalLines
-      ? `${assignedLines} of ${totalLines} lines · ${assignedUnits} of ${totalUnits} units assigned`
-      : `${assignedLines} of ${totalLines} lines assigned`;
+  });
 
   return (
     <View style={[styles.bottomActions, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
       <View style={styles.subtotalRow}>
-        <Text style={styles.assignedCount}>{assignmentLabel}</Text>
-        <Text style={styles.subtotalText}>Subtotal: {formatCurrency(subtotal)}</Text>
+        <Text style={styles.assignedCount}>
+          {myItemCount} {myItemCount === 1 ? 'item' : 'items'} selected
+        </Text>
+        <Text style={styles.subtotalText}>Your share: {formatCurrency(myTotal)}</Text>
       </View>
-      <TouchableOpacity activeOpacity={0.85} onPress={onSend}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onConfirm}>
         <LinearGradient
           colors={[colors.secondary, colors.secondaryDim]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.sendButton, shadows.sendButton]}
         >
-          <Text style={styles.sendButtonText}>Send to Members</Text>
+          <Text style={styles.sendButtonText}>{isOwner ? 'Done' : 'Confirm & Pay'}</Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -347,14 +336,15 @@ function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantitie
 
 export default function BillSplitScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const billId = route?.params?.billId;
 
   const [bill, setBill] = useState(null);
   const [members, setMembers] = useState([]);
   const [items, setItems] = useState([]);
   const [assignmentMap, setAssignmentMap] = useState({});
+  const [assignmentIdMap, setAssignmentIdMap] = useState({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [savingItemEdits, setSavingItemEdits] = useState(false);
   const [isEditingItems, setIsEditingItems] = useState(false);
   const [nextDraftItemId, setNextDraftItemId] = useState(1);
@@ -363,6 +353,26 @@ export default function BillSplitScreen({ navigation, route }) {
   const [itemPrices, setItemPrices] = useState({});
   const [originalItemSnapshots, setOriginalItemSnapshots] = useState({});
   const [removedItemIds, setRemovedItemIds] = useState({});
+
+  const uid = user?.id ? String(user.id) : null;
+  const myMember = members.find((m) => m.user_id != null && String(m.user_id) === uid);
+  const myMemberId = myMember?.id;
+  const isOwner = bill != null && uid != null && String(bill.owner_id ?? bill.created_by) === uid;
+
+  const handleWsUpdate = useCallback((data) => {
+    const map = {};
+    const idMap = {};
+    (data.assignments ?? []).forEach((a) => {
+      if (!map[a.receipt_item_id]) map[a.receipt_item_id] = [];
+      map[a.receipt_item_id].push(a.bill_member_id);
+      if (a.id) idMap[`${a.receipt_item_id}_${a.bill_member_id}`] = a.id;
+    });
+    setAssignmentMap(map);
+    setAssignmentIdMap(idMap);
+    if (data.members) setMembers(data.members);
+  }, []);
+
+  useBillWebSocket(billId, handleWsUpdate);
 
   const applyServerItemState = useCallback((nextBill, nextItems, preserveAssignments = false) => {
     setBill(nextBill);
@@ -414,14 +424,17 @@ export default function BillSplitScreen({ navigation, route }) {
       applyServerItemState(data.bill, data.items ?? []);
 
       const map = {};
+      const idMap = {};
       (data.items ?? []).forEach((item) => {
         map[item.id] = [];
       });
       (data.bill?.assignments ?? []).forEach?.((a) => {
         if (!map[a.receipt_item_id]) map[a.receipt_item_id] = [];
         map[a.receipt_item_id].push(a.bill_member_id);
+        idMap[`${a.receipt_item_id}_${a.bill_member_id}`] = a.id;
       });
       setAssignmentMap(map);
+      setAssignmentIdMap(idMap);
     } catch {
       // keep whatever state we have
     }
@@ -431,16 +444,57 @@ export default function BillSplitScreen({ navigation, route }) {
     fetchSummary().finally(() => setLoading(false));
   }, [fetchSummary, route?.params?.refresh]);
 
-  const handleToggleMember = (itemId, memberId) => {
+  const handleToggleClaim = useCallback(async (itemId) => {
+    if (!myMemberId) return;
+    const current = assignmentMap[itemId] || [];
+    const has = current.includes(myMemberId);
+
     setAssignmentMap((prev) => {
-      const current = prev[itemId] || [];
-      const has = current.includes(memberId);
+      const cur = prev[itemId] || [];
       return {
         ...prev,
-        [itemId]: has ? current.filter((id) => id !== memberId) : [...current, memberId],
+        [itemId]: has ? cur.filter((id) => id !== myMemberId) : [...cur, myMemberId],
       };
     });
-  };
+
+    try {
+      if (has) {
+        const key = `${itemId}_${myMemberId}`;
+        const assignmentId = assignmentIdMap[key];
+        if (assignmentId) {
+          await assignmentsApi.delete(billId, assignmentId);
+          setAssignmentIdMap((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        }
+      } else {
+        const res = await assignmentsApi.create(billId, [{
+          receipt_item_id: itemId,
+          bill_member_id: myMemberId,
+          share_type: 'equal',
+          share_value: 0,
+        }]);
+        const created = res?.data ?? [];
+        if (created.length > 0) {
+          setAssignmentIdMap((prev) => ({
+            ...prev,
+            [`${itemId}_${myMemberId}`]: created[0].id,
+          }));
+        }
+      }
+    } catch {
+      setAssignmentMap((prev) => {
+        const cur = prev[itemId] || [];
+        return {
+          ...prev,
+          [itemId]: has ? [...cur, myMemberId] : cur.filter((id) => id !== myMemberId),
+        };
+      });
+      Alert.alert('Error', 'Failed to save your selection. Please try again.');
+    }
+  }, [assignmentMap, assignmentIdMap, billId, myMemberId]);
 
   const adjustItemQuantity = useCallback(
     (itemId, delta) => {
@@ -532,7 +586,6 @@ export default function BillSplitScreen({ navigation, route }) {
   };
 
   const visibleItems = items.filter((item) => !removedItemIds[item.id]);
-  const visibleItemIds = new Set(visibleItems.map((item) => item.id));
 
   const getCurrentItemDraft = useCallback((item) => ({
     id: `${item.id}`,
@@ -633,43 +686,57 @@ export default function BillSplitScreen({ navigation, route }) {
     }
   }, [applyServerItemState, billId, buildReceiptEditPayload, isEditingItems, savingItemEdits]);
 
-  const handleSend = async () => {
-    if (isEditingItems || savingItemEdits) {
-      Alert.alert('Save items first', 'Tap Done to save your receipt edits before sending to members.');
-      return;
-    }
-
-    const assignmentsList = [];
-    Object.entries(assignmentMap).forEach(([itemId, memberIds]) => {
-      if (!visibleItemIds.has(itemId)) return;
-      memberIds.forEach((memberId) => {
-        assignmentsList.push({
-          receipt_item_id: itemId,
-          bill_member_id: memberId,
-          share_type: 'equal',
-          share_value: 0,
-        });
-      });
-    });
-
-    if (assignmentsList.length === 0) {
-      Alert.alert('No assignments', 'Assign at least one item to a member before continuing.');
-      return;
-    }
-
-    setSaving(true);
+  const handleShareBill = async () => {
     try {
-      await assignmentsApi.create(billId, assignmentsList);
-      try {
-        await invitesApi.share(billId);
-      } catch {
-        // SMS delivery is best-effort; don't block navigation
+      const res = await membersApi.createInviteLink(billId);
+      const token = res.data?.token || res.token;
+      const billTitle = bill.title || bill.merchant_name || 'this bill';
+
+      if (!token) {
+        Alert.alert('Error', 'Could not create invite code');
+        return;
       }
-      navigation.navigate('ActivityDetail', { billId });
+
+      Alert.alert(
+        'Invite Friends',
+        `Share this code: ${token}\n\nFriends can join by opening SPLTR and entering this code.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Share',
+            onPress: async () => {
+              await Share.share({
+                message: `Join me on ${billTitle}!\n\nDownload SPLTR and use code: ${token}`,
+                title: `Join ${billTitle}`,
+              });
+            },
+          },
+        ],
+      );
     } catch (err) {
-      Alert.alert('Error', err?.error?.message ?? 'Failed to save assignments');
-    } finally {
-      setSaving(false);
+      if (err.message !== 'User did not share') {
+        Alert.alert('Error', err?.error?.message ?? 'Failed to create invite code');
+      }
+    }
+  };
+
+  const handleConfirmAndPay = () => {
+    if (isEditingItems || savingItemEdits) {
+      Alert.alert('Save items first', 'Tap Done to save your receipt edits before sending.');
+      return;
+    }
+
+    if (isOwner) {
+      navigation.navigate('ActivityDetail', { billId });
+    } else {
+      const myItems = visibleItems.filter((item) =>
+        (assignmentMap[item.id] || []).includes(myMemberId),
+      );
+      if (myItems.length === 0) {
+        Alert.alert('No items selected', 'Tap "I had this" on items you ordered before continuing.');
+        return;
+      }
+      navigation.navigate('ReviewPayment', { billId });
     }
   };
 
@@ -698,6 +765,7 @@ export default function BillSplitScreen({ navigation, route }) {
         insets={insets}
         onBack={navigation?.canGoBack?.() ? navigation.goBack : null}
         title={bill.title || bill.merchant_name}
+        onShare={isOwner ? handleShareBill : undefined}
       />
 
       <ScrollView
@@ -719,8 +787,10 @@ export default function BillSplitScreen({ navigation, route }) {
           <>
             <View style={styles.assignSection}>
               <View style={styles.assignHeader}>
-                <Text style={styles.assignTitle}>Assign Items</Text>
-                <View style={styles.assignActions}>
+                <Text style={styles.assignTitle}>
+                  {isOwner ? 'Assign Items' : 'Select Your Items'}
+                </Text>
+                {isOwner && <View style={styles.assignActions}>
                   {isEditingItems && (
                     <TouchableOpacity
                       activeOpacity={0.85}
@@ -765,15 +835,15 @@ export default function BillSplitScreen({ navigation, route }) {
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
-                </View>
+                </View>}
               </View>
               {visibleItems.map((item) => (
                 <BillItemCard
                   key={item.id}
                   item={item}
-                  members={members}
-                  assignedMemberIds={assignmentMap[item.id] || []}
-                  onToggleMember={handleToggleMember}
+                  isClaimed={myMemberId ? (assignmentMap[item.id] || []).includes(myMemberId) : false}
+                  claimCount={(assignmentMap[item.id] || []).length}
+                  onToggleClaim={() => handleToggleClaim(item.id)}
                   isEditingItems={isEditingItems}
                   quantity={itemQuantities[item.id] ?? item.quantity ?? 0}
                   name={itemNames[item.id] ?? item.name ?? ''}
@@ -787,9 +857,9 @@ export default function BillSplitScreen({ navigation, route }) {
               ))}
             </View>
 
-            {members.length > 0 && visibleItems.length > 0 && (
-              <MembersSummary
-                members={members}
+            {myMemberId && visibleItems.length > 0 && (
+              <MyShareSummary
+                myMemberId={myMemberId}
                 items={visibleItems}
                 assignmentMap={assignmentMap}
                 itemPrices={itemPrices}
@@ -799,14 +869,15 @@ export default function BillSplitScreen({ navigation, route }) {
         )}
       </ScrollView>
 
-      {visibleItems.length > 0 && (
+      {visibleItems.length > 0 && myMemberId && (
         <BottomActions
           insets={insets}
           items={visibleItems}
           assignmentMap={assignmentMap}
           itemPrices={itemPrices}
-          itemQuantities={itemQuantities}
-          onSend={handleSend}
+          myMemberId={myMemberId}
+          onConfirm={handleConfirmAndPay}
+          isOwner={isOwner}
         />
       )}
     </View>
@@ -1031,11 +1102,10 @@ const styles = StyleSheet.create({
   itemCardNormal: {
     backgroundColor: colors.surfaceContainerLowest,
   },
-  itemCardUnassigned: {
-    backgroundColor: colors.surfaceContainerLow,
+  itemCardClaimed: {
+    backgroundColor: colors.surfaceContainerLowest,
     borderWidth: 1.5,
-    borderColor: colors.outlineVariant,
-    opacity: 0.95,
+    borderColor: colors.secondary,
   },
   itemCardZeroQuantity: {
     backgroundColor: colors.errorContainer,
@@ -1072,12 +1142,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurfaceVariant,
   },
-  itemPriceUnassigned: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.error,
-  },
   removeItemButton: {
     alignSelf: 'flex-start',
     backgroundColor: colors.error,
@@ -1092,27 +1156,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.onError,
   },
-  unassignedIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.errorContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  assignedBadge: {
+  claimedBadge: {
     width: 32,
     height: 32,
     borderRadius: 16,
     backgroundColor: colors.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  assignedBadgeText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.secondary,
   },
   quantityEditor: {
     flexDirection: 'row',
@@ -1143,34 +1193,44 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
 
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
   itemCardFooter: {
     marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   itemCardFooterEditing: {
+    marginTop: 2,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'flex-end',
   },
-  chip: {
+  claimToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: radii.full,
+    backgroundColor: colors.surfaceContainerHigh,
   },
-  chipActive: { backgroundColor: colors.secondary },
-  chipInactive: { backgroundColor: colors.surfaceContainerHigh },
-  chipText: {
+  claimToggleActive: {
+    backgroundColor: colors.secondary,
+  },
+  claimToggleText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
+    color: colors.onSurfaceVariant,
   },
-  chipTextActive: { color: colors.onSecondary },
-  chipTextInactive: { color: colors.onSurfaceVariant },
+  claimToggleTextActive: {
+    color: colors.onSecondary,
+  },
+  claimInfoText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+  },
   priceEditorWrap: {
     minWidth: 120,
     alignItems: 'flex-end',
