@@ -1,12 +1,53 @@
 import React, { useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Animated,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { spacing } from '../theme';
 
-import LandingCtaButton from '../components/LandingCtaButton';
-import { colors, spacing } from '../theme';
+const BRAND = '#105D4B';
+const BRAND_DARK = '#0d4a3c';
 
-const { height: SCREEN_H } = Dimensions.get('window');
+function FeatureRow({ text }) {
+  return (
+    <View style={styles.featureRow}>
+      <View style={styles.checkBadge}>
+        <Text style={styles.checkMark}>✓</Text>
+      </View>
+      <Text style={styles.featureText}>{text}</Text>
+    </View>
+  );
+}
+
+function PrimaryButton({ label, onPress }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () =>
+    Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40 }).start();
+  const onPressOut = () =>
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 40 }).start();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Animated.View style={[styles.ctaButton, { transform: [{ scale }] }]}>
+        <Text style={styles.ctaLabel}>{label}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 export default function LandingScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -16,29 +57,19 @@ export default function LandingScreen({ navigation }) {
     if (navLock.current) return;
     navLock.current = true;
     navigation.navigate('PhoneAuth');
-    setTimeout(() => {
-      navLock.current = false;
-    }, 600);
-  }, [navigation]);
-
-  const goToLogin = useCallback(() => {
-    if (navLock.current) return;
-    navLock.current = true;
-    navigation.navigate('Login');
-    setTimeout(() => {
-      navLock.current = false;
-    }, 600);
+    setTimeout(() => { navLock.current = false; }, 600);
   }, [navigation]);
 
   return (
     <View
       style={[
         styles.root,
-        { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.xl },
+        { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
       ]}
     >
       <StatusBar style="dark" />
 
+      {/* ── Hero ── */}
       <View style={styles.hero}>
         <View style={styles.logoContainer}>
           <Image
@@ -47,13 +78,23 @@ export default function LandingScreen({ navigation }) {
             resizeMode="contain"
           />
         </View>
-        <Text style={styles.title}>Splitter</Text>
-        <Text style={styles.tagline}>CURATED FINANCE</Text>
+
+        <Text style={styles.headline}>Split bills{'\n'}instantly.</Text>
+        <Text style={styles.sub}>
+          No awkward math. No chasing payments.
+        </Text>
+
+        <View style={styles.features}>
+          <FeatureRow text="Scan receipts" />
+          <FeatureRow text="Auto-assign items" />
+          <FeatureRow text="Settle in seconds" />
+        </View>
       </View>
 
+      {/* ── CTA ── */}
       <View style={styles.ctaColumn}>
-        <LandingCtaButton label="Get Started" variant="primary" onPress={goToSignup} />
-        <Text style={styles.footer}>© 2024 CURATOR FINANCE  EDITORIAL PRECISION</Text>
+        <PrimaryButton label="Start Splitting" onPress={goToSignup} />
+        <Text style={styles.footer}>No fees. No spam.</Text>
       </View>
     </View>
   );
@@ -62,62 +103,112 @@ export default function LandingScreen({ navigation }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
   },
+
+  /* Hero */
   hero: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingHorizontal: spacing['2xl'],
+    paddingHorizontal: 32,
   },
   logoContainer: {
-    width: 100,
-    height: 100,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    width: 96,
+    height: 96,
+    backgroundColor: '#F0F9F6',
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing['2xl'],
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    alignSelf: 'center',
+    marginBottom: 36,
+    shadowColor: '#105D4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
   },
   logo: {
-    width: 60,
-    height: 60,
+    width: 62,
+    height: 62,
   },
-  title: {
+  headline: {
     fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 36,
+    fontSize: 44,
     fontWeight: '800',
-    color: '#2B3437',
-    letterSpacing: -0.5,
-    marginBottom: spacing.xs,
+    color: '#111827',
+    lineHeight: 52,
+    letterSpacing: -1,
+    marginBottom: 14,
   },
-  tagline: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#9CA3AF',
-    textAlign: 'center',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+  sub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 17,
+    color: '#6B7280',
+    lineHeight: 26,
+    marginBottom: 32,
   },
-  ctaColumn: {
-    paddingHorizontal: spacing['2xl'],
-    width: '100%',
+
+  /* Feature list */
+  features: {
+    gap: 12,
+  },
+  featureRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  checkBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E6F4F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkMark: {
+    fontSize: 13,
+    color: BRAND,
+    fontWeight: '700',
+  },
+  featureText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 15,
+    color: '#374151',
+  },
+
+  /* CTA */
+  ctaColumn: {
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  ctaButton: {
+    width: '100%',
+    minWidth: 300,
+    height: 56,
+    backgroundColor: BRAND,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: BRAND_DARK,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  ctaLabel: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
   footer: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 9,
-    color: '#D1D5DB',
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 14,
     textAlign: 'center',
-    letterSpacing: 0.5,
-    marginTop: spacing.md,
-    textTransform: 'uppercase',
   },
 });

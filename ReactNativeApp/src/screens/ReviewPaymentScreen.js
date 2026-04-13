@@ -18,9 +18,6 @@ import { colors, radii, shadows } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { bills as billsApi, assignments as assignmentsApi, payments as paymentsApi } from '../services/api';
 
-const SERVICE_FEE_RATE = 0.03;
-const TAX_RATE = 0.1;
-
 const TIP_OPTIONS = [
   { label: '15%', value: 0.15 },
   { label: '18%', value: 0.18 },
@@ -126,11 +123,11 @@ function TipSelector({ selectedTip, onSelect, customAmount, onCustomChange }) {
   );
 }
 
-function BreakdownRow({ label, value }) {
+function BreakdownRow({ label, value, highlight }) {
   return (
     <View style={styles.breakdownRow}>
-      <Text style={styles.breakdownLabel}>{label}</Text>
-      <Text style={styles.breakdownValue}>{value}</Text>
+      <Text style={[styles.breakdownLabel, highlight && styles.breakdownLabelHighlight]}>{label}</Text>
+      <Text style={[styles.breakdownValue, highlight && styles.breakdownValueHighlight]}>{value}</Text>
     </View>
   );
 }
@@ -144,6 +141,7 @@ function ProgressiveReceipt({
   onCustomTipChange,
   tipAmount,
   serviceFee,
+  serviceFeeLabel,
   tax,
   total,
 }) {
@@ -173,9 +171,15 @@ function ProgressiveReceipt({
 
       <View style={styles.breakdownSection}>
         <BreakdownRow label="Subtotal (your share)" value={formatMoney(payBase)} />
-        <BreakdownRow label="Service Fee (3%)" value={formatMoney(serviceFee)} />
-        <BreakdownRow label="Tax (10%)" value={formatMoney(tax)} />
-        <BreakdownRow label={`Tip (${tipLabel})`} value={formatMoney(tipAmount)} />
+        {serviceFee > 0 && (
+          <BreakdownRow label={serviceFeeLabel} value={formatMoney(serviceFee)} highlight />
+        )}
+        {tax > 0 && (
+          <BreakdownRow label="Tax" value={formatMoney(tax)} />
+        )}
+        {tipAmount > 0 && (
+          <BreakdownRow label={`Tip (${tipLabel})`} value={formatMoney(tipAmount)} />
+        )}
       </View>
 
       <DashedDivider />
@@ -236,6 +240,9 @@ export default function ReviewPaymentScreen({ navigation, route }) {
   const [members, setMembers] = useState([]);
   const [lineItems, setLineItems] = useState([]);
   const [payBase, setPayBase] = useState(0);
+  const [feeShare, setFeeShare] = useState(0);
+  const [feeLabel, setFeeLabel] = useState('Service Fee');
+  const [taxShare, setTaxShare] = useState(0);
   const [myMember, setMyMember] = useState(null);
   const [paying, setPaying] = useState(false);
 
@@ -243,14 +250,25 @@ export default function ReviewPaymentScreen({ navigation, route }) {
   const [customTipStr, setCustomTipStr] = useState('3.00');
 
   const load = useCallback(async () => {
-    if (!billId || !user?.id) return;
+    if (!billId || !user?.id) {
+      console.log('[ReviewPayment] Missing billId or user.id:', { billId, userId: user?.id });
+      return;
+    }
     setLoading(true);
+    console.log('[ReviewPayment] Loading bill data for billId:', billId);
     try {
-      const [sumRes, assignRes, payRes] = await Promise.all([
+      const [sumRes, assignRes, payRes, breakdownRes] = await Promise.all([
         billsApi.getSummary(billId),
         assignmentsApi.list(billId),
         paymentsApi.listForBill(billId),
+        billsApi.getBalanceBreakdown(billId).catch(() => null),
       ]);
+      console.log('[ReviewPayment] API responses received:', {
+        hasSummary: !!sumRes?.data,
+        hasAssignments: !!assignRes?.data,
+        hasPayments: !!payRes?.data,
+        hasBreakdown: !!breakdownRes?.data,
+      });
 
       const data = sumRes.data;
       const b = data.bill;
@@ -259,7 +277,14 @@ export default function ReviewPaymentScreen({ navigation, route }) {
       setMembers(mems);
 
       const uid = String(user.id);
+      console.log('[ReviewPayment] Looking for member with user_id:', uid);
+      console.log('[ReviewPayment] Available members:', mems.map(m => ({
+        id: m.id,
+        user_id: m.user_id,
+        nickname: m.nickname,
+      })));
       const me = mems.find((m) => m.user_id != null && String(m.user_id) === uid);
+      console.log('[ReviewPayment] Found member:', me ? { id: me.id, nickname: me.nickname } : 'NOT FOUND');
       setMyMember(me || null);
 
       const assignments = assignRes.data ?? [];
@@ -268,10 +293,13 @@ export default function ReviewPaymentScreen({ navigation, route }) {
       if (!me) {
         setLineItems([]);
         setPayBase(0);
+        setFeeShare(0);
+        setTaxShare(0);
         setLoading(false);
         return;
       }
 
+      // Line items for display
       const mine = assignments.filter((a) => String(a.bill_member_id) === String(me.id));
       const rows = mine.map((a, idx) => ({
         key: `${a.id}-${idx}`,
@@ -280,12 +308,51 @@ export default function ReviewPaymentScreen({ navigation, route }) {
       }));
       setLineItems(rows);
 
+      // Subtotal after deducting already-paid amounts
       const owed = rows.reduce((s, r) => s + r.amount, 0);
       const paid = payments
         .filter((p) => String(p.bill_member_id) === String(me.id) && p.status === 'succeeded')
         .reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);
       setPayBase(Math.max(0, owed - paid));
-    } catch {
+
+      // Fee & tax from backend breakdown (prefer breakdown endpoint, fallback to member fields)
+      const breakdown = breakdownRes?.data;
+      const myBreakdown = breakdown?.members?.find?.(
+        (m) => String(m.member_id ?? m.id) === String(me.id),
+      );
+      const backendFee = parseFloat(
+        myBreakdown?.fee_share ?? me.fee_share ?? 0,
+      );
+      const backendTax = parseFloat(
+        myBreakdown?.tax_share ?? me.tax_share ?? 0,
+      );
+      const feeRate = breakdown?.fee_rate ?? b?.fee_rate;
+      
+      // Debug logging
+      console.log('[ReviewPayment] Service fee data:', {
+        backendFee,
+        feeRate,
+        rawFeeShare: myBreakdown?.fee_share,
+        memberFeeShare: me.fee_share,
+        billServiceFeeType: b?.service_fee_type,
+        billServiceFeePercentage: b?.service_fee_percentage,
+        billFeeRate: b?.fee_rate,
+        fullBreakdown: breakdown,
+        myBreakdownData: myBreakdown,
+      });
+      
+      setFeeShare(backendFee);
+      setTaxShare(backendTax);
+      if (feeRate != null) {
+        setFeeLabel(`Service Fee (${Math.round(feeRate * 100)}%)`);
+      }
+    } catch (err) {
+      console.error('[ReviewPayment] Error loading bill data:', {
+        error: err?.message,
+        code: err?.code,
+        serverError: err?.error,
+        billId,
+      });
       setBill(null);
     } finally {
       setLoading(false);
@@ -301,9 +368,7 @@ export default function ReviewPaymentScreen({ navigation, route }) {
       ? Math.max(0, parseFloat(customTipStr) || 0)
       : payBase * selectedTip.value;
 
-  const serviceFee = payBase * SERVICE_FEE_RATE;
-  const tax = payBase * TAX_RATE;
-  const total = payBase + serviceFee + tax + tipAmount;
+  const total = payBase + feeShare + taxShare + tipAmount;
 
   const handleSelectTip = useCallback((option) => {
     if (option.value === 'custom') {
@@ -452,8 +517,9 @@ export default function ReviewPaymentScreen({ navigation, route }) {
           customTipStr={customTipStr}
           onCustomTipChange={setCustomTipStr}
           tipAmount={tipAmount}
-          serviceFee={serviceFee}
-          tax={tax}
+          serviceFee={feeShare}
+          serviceFeeLabel={feeLabel}
+          tax={taxShare}
           total={total}
         />
 
@@ -705,11 +771,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurfaceVariant,
   },
+  breakdownLabelHighlight: {
+    fontFamily: 'Inter_600SemiBold',
+    fontWeight: '600',
+    color: colors.tertiary,
+  },
   breakdownValue: {
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
     fontWeight: '500',
     color: colors.onSurface,
+  },
+  breakdownValueHighlight: {
+    fontFamily: 'Inter_600SemiBold',
+    fontWeight: '600',
+    color: colors.tertiary,
   },
 
   totalRow: {

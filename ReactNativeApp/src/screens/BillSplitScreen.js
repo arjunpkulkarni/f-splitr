@@ -337,7 +337,7 @@ function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantitie
           end={{ x: 1, y: 1 }}
           style={[styles.sendButton, shadows.sendButton]}
         >
-          <Text style={styles.sendButtonText}>Send to Members</Text>
+          <Text style={styles.sendButtonText}>Pay your Portion</Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -695,7 +695,15 @@ export default function BillSplitScreen({ navigation, route }) {
 
     setSaving(true);
     try {
-      await assignmentsApi.create(billId, assignmentsList);
+      // Check if assignments already exist on the server
+      const existingRes = await assignmentsApi.list(billId);
+      const existingAssignments = existingRes.data ?? [];
+      
+      // Only create assignments if none exist yet
+      if (existingAssignments.length === 0) {
+        await assignmentsApi.create(billId, assignmentsList);
+      }
+      
       navigation.navigate('ReviewPayment', { billId });
     } catch (err) {
       Alert.alert('Error', err?.error?.message ?? 'Failed to save assignments');

@@ -164,6 +164,12 @@ export const bills = {
   getSummary: (billId) => client.get(`/bills/${billId}/summary`),
 
   getActivity: (billId) => client.get(`/bills/${billId}/activity`),
+
+  getBalanceBreakdown: (billId) =>
+    client.get(`/bills/${billId}/balance-breakdown`),
+
+  getMemberBalances: (billId) =>
+    client.get(`/bills/${billId}/member-balances`),
 };
 
 // ─── Members ─────────────────────────────────────────────────────────────────
@@ -229,12 +235,6 @@ export const assignments = {
     }),
 
   recalculate: (billId) => client.post(`/bills/${billId}/recalculate`),
-
-  getBalanceBreakdown: (billId) =>
-    client.get(`/bills/${billId}/balance-breakdown`),
-
-  getMemberBalances: (billId) =>
-    client.get(`/bills/${billId}/member-balances`),
 };
 
 // ─── Payments ────────────────────────────────────────────────────────────────
