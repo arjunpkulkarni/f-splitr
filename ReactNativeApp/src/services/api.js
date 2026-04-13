@@ -278,6 +278,12 @@ export const notifications = {
     client.patch(`/notifications/${notificationId}/read`),
 };
 
+// ─── Public Pay (no auth) ────────────────────────────────────────────────────
+export const payPublic = {
+  getPaymentInfo: (token) =>
+    axios.get(`${BASE_URL}/pay/${token}`).then((r) => r.data),
+};
+
 // ─── Health ──────────────────────────────────────────────────────────────────
 export const health = () => client.get('/health');
 

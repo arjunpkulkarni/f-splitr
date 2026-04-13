@@ -22,7 +22,12 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "SPLTR - Pay Your Share",
+      "shortName": "SPLTR",
+      "description": "Pay your share of a split bill securely via Stripe.",
+      "themeColor": "#006c5c",
+      "backgroundColor": "#f8f9fa"
     },
     "plugins": [
       "expo-font"

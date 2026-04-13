@@ -1,134 +1,95 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  Image,
   TouchableOpacity,
   StyleSheet,
   Platform,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, radii, shadows } from '../theme';
-
-const PROFILE_URL =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuA4Q8bK2N4eUmRk0_HtgWnKovg1C-O7rnE-YOCak6s0g_jDIWWg422kEwBvDK6B6splBGWbYH6zOJCIDhXKF8LEun1U_uKD0aUWkgU4eUloundcAQ3YoYXtBql3yONRjv7RgRBx5kkdVZp1EIh9bE9efd5o3cHnEDcmuwsJYEXr1undNZ-QU4uki8rEEUBAeIhDOXx7wrXCCbfiUSNTpvGwETMoNCtdoxySp-72maId718X0-PQ7I-3lCwny0IzohU_CBfFR9Rx';
-
-const PARTICIPANTS = [
-  {
-    id: '1',
-    name: 'Alex M. (You)',
-    detail: 'Paid via WealthSplit',
-    amount: '$12.50',
-    status: 'paid',
-    statusLabel: 'Paid',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCptKGjWSMJFxNwkN0IPGEvNIodUKSAnNm_OkzkLqb3su864y9Hibm4CcV1Wrj-Mg-g4e6eFn5LakrqfgLOA8Z0pkvG1pGY1jJL7NJ_cTa2u7VSIP3VMPRFI8_nbo2_rJYGtFQ6YDaQAoJ1lFreavq94IBfdic1w7JgE5CV2AYMYlutYNlkHYFNxlgBb98jPkhEb5G4hB_ibuLvt2RDzwnTOJyufoEDNs4kJWLVHK5JuCCvjyc5fFyTDoF6TJA8Czel7Wohx3d1',
-  },
-  {
-    id: '2',
-    name: 'Sarah K.',
-    detail: 'Pending request',
-    amount: '$10.50',
-    status: 'pending',
-    statusLabel: 'Pending',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCJoW73q-GF7ia3dUmmdfz0xThHDFpIsstEBfkGbxDT29Ho7ktDlCEEVPzMziwCDUzHh9KPGi3Irp9Bd2HHsS5ObBcI8QDuCQDuw9hw1MTUsAsQMOxGYVquAYT0r2BUE_ShvbBbUJBTWlRyMyApZvAVxcjo2RUkZ2KC1L7u4m2CZejeNTJO6P1FR3eZyDeOgiamy0mobyJesnGvFcX1nC5WPXZ3Kz7aa_nKfz29Hv5Zs7q8FWf8Vx5PK6Fb3KHa5S8eoE4rYv-S',
-  },
-  {
-    id: '3',
-    name: 'Jordan L.',
-    detail: 'Notification sent 2h ago',
-    amount: '$15.50',
-    status: 'reminder',
-    statusLabel: 'Reminder Sent',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCNfc7LhGRw7TwadH1gzGKU_zAzWaML0bjxAsKj6zomT-bHPAWYYMCXpgPF15UiQXsE7gtm9GGZ3DDjbGnYBDs8tgE6ZvagQS7Qb5MH0HrFMlWmg85unSBWbvQHyJIEHJ2zSrnbIQ5G46PQ9DQPlYivbOr3q3SvT6F7EDp9J7P7aQAZes23mGOzcx7GRnNsXwaRP76PVwU2vJ-fw0UR6c3f-2AMOd0au91gGwQpyUjzGUXju4QBL7tixSxcLTaCRwurMHSaqany',
-  },
-  {
-    id: '4',
-    name: 'Mia W.',
-    detail: 'Paid via Apple Pay',
-    amount: '$8.00',
-    status: 'paid',
-    statusLabel: 'Paid',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCCwZ7NRTGP_6fzk9QwotI9Wy1FdaHUfjBsa0VKwxPfcbp9z4EZmgV79atj7VlQfIsrFinpWfVjO76sHATqoiEGOSipEFTHZY7mpQOhIrQEfCTH3lcDFnVoj6Y-T_7jEZjOkchJa0mZSUfHM_t44O8tBoPyPCogwdyFENJ6BRZbvWy8FWNYMx-sXx3gYpx0r5LgpW96i6wb22yBorY3pR7Fawxl3nKc0m7BiJK3GXEzxp9of2B42ZzQcvdb0u7Dj7lIV4gVkOzK',
-  },
-  {
-    id: '5',
-    name: 'Ryan C.',
-    detail: 'Paid via WealthSplit',
-    amount: '$7.50',
-    status: 'paid',
-    statusLabel: 'Paid',
-    avatar:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuD1FWdFvy03jKS03b3w6QCkdRMK5osLRo_4fIK33K0fCGGtB3nkxzQfe8EUKQKZfq6SjVVyD50h1kNz2ZRDkdeKVrwXaafYonXUHYKOJ-AfSgSYi0sYnDM6__JyG5wbHKllD2hw23-lV3JD6P2UBh7RiTUGwbZAdpSuMcmkWDj9SgJc6qdRbWsj_Gm3TRi3sHMcj7nDGss9Yp8bJZwmm0JlUw8CbpmbRil4afdNYGwJi7TUqhbKlN7G7cSp01YxWO7ckH6Ls9HE',
-  },
-];
+import { useAuth } from '../contexts/AuthContext';
+import {
+  bills as billsApi,
+  payments as paymentsApi,
+  invites as invitesApi,
+} from '../services/api';
 
 const STATUS_CONFIG = {
-  paid: { color: colors.secondary, icon: 'check-circle' },
-  pending: { color: colors.outline, icon: 'schedule' },
-  reminder: { color: colors.tertiary, icon: 'mail' },
+  paid: { color: colors.secondary, icon: 'check-circle', label: 'Paid' },
+  pending: { color: colors.outline, icon: 'schedule', label: 'Pending' },
+  reminder: { color: colors.tertiary, icon: 'mail', label: 'Notified' },
 };
 
-const COLLECTED = 45.0;
-const REMAINING = 9.5;
-const TOTAL = 54.5;
-const PROGRESS = Math.round((COLLECTED / TOTAL) * 100);
+function formatMoney(n) {
+  const x = typeof n === 'string' ? parseFloat(n) : Number(n);
+  if (Number.isNaN(x)) return '$0.00';
+  return `$${x.toFixed(2)}`;
+}
 
-function TopAppBar({ insets }) {
+function TopAppBar({ insets, onBack, title }) {
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.topBarInner}>
         <View style={styles.headerLeft}>
-          <View style={styles.avatarContainer}>
-            <Image source={{ uri: PROFILE_URL }} style={styles.profileAvatar} />
-          </View>
-          <Text style={styles.appTitle}>WealthSplit</Text>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.7}>
+              <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.appTitle} numberOfLines={1}>{title || 'Bill Details'}</Text>
         </View>
         <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
-          <MaterialIcons name="notifications-none" size={24} color={colors.onSurface} />
+          <MaterialIcons name="more-vert" size={24} color={colors.onSurface} />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function BillHeader() {
+function BillHeader({ bill, memberCount }) {
+  const title = bill?.merchant_name || bill?.title || 'Untitled Bill';
   return (
     <View style={styles.billHeader}>
       <View style={styles.billHeaderLeft}>
-        <Text style={styles.billTitle}>Dinner at Serafina</Text>
-        <Text style={styles.billSubtitle}>Shared between 6 participants</Text>
+        <Text style={styles.billTitle}>{title}</Text>
+        <Text style={styles.billSubtitle}>
+          Shared between {memberCount} participant{memberCount !== 1 ? 's' : ''}
+        </Text>
       </View>
       <View style={styles.billHeaderRight}>
-        <Text style={styles.billTotal}>$54.50</Text>
+        <Text style={styles.billTotal}>{formatMoney(bill?.total)}</Text>
         <Text style={styles.billTotalLabel}>TOTAL BILL</Text>
       </View>
     </View>
   );
 }
 
-function ProgressCard() {
+function ProgressCard({ collected, remaining, total }) {
+  const progress = total > 0 ? Math.round((collected / total) * 100) : 0;
   return (
     <View style={styles.progressCard}>
       <View style={styles.progressHeader}>
         <Text style={styles.progressLabel}>Collection Progress</Text>
-        <Text style={styles.progressPercent}>{PROGRESS}%</Text>
+        <Text style={styles.progressPercent}>{progress}%</Text>
       </View>
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${PROGRESS}%` }]} />
+        <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` }]} />
       </View>
       <View style={styles.progressFooter}>
         <View style={styles.progressStat}>
-          <Text style={styles.progressStatAmount}>${COLLECTED.toFixed(2)}</Text>
+          <Text style={styles.progressStatAmount}>{formatMoney(collected)}</Text>
           <Text style={styles.progressStatLabel}> collected</Text>
         </View>
         <View style={styles.progressStat}>
-          <Text style={styles.progressStatAmountError}>${REMAINING.toFixed(2)}</Text>
+          <Text style={styles.progressStatAmountError}>{formatMoney(remaining)}</Text>
           <Text style={styles.progressStatLabel}> remaining</Text>
         </View>
       </View>
@@ -137,25 +98,26 @@ function ProgressCard() {
 }
 
 function ParticipantCard({ participant }) {
-  const config = STATUS_CONFIG[participant.status];
-
+  const config = STATUS_CONFIG[participant.status] || STATUS_CONFIG.pending;
   return (
     <View style={styles.participantCard}>
       <View style={styles.participantLeft}>
         <View style={styles.participantAvatarWrap}>
-          <Image source={{ uri: participant.avatar }} style={styles.participantAvatar} />
+          <Text style={styles.participantInitial}>
+            {(participant.name || '?').charAt(0).toUpperCase()}
+          </Text>
         </View>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.participantName}>{participant.name}</Text>
           <Text style={styles.participantDetail}>{participant.detail}</Text>
         </View>
       </View>
       <View style={styles.participantRight}>
-        <Text style={styles.participantAmount}>{participant.amount}</Text>
+        <Text style={styles.participantAmount}>{formatMoney(participant.amount)}</Text>
         <View style={styles.statusBadge}>
           <MaterialIcons name={config.icon} size={12} color={config.color} />
           <Text style={[styles.statusText, { color: config.color }]}>
-            {participant.statusLabel}
+            {config.label}
           </Text>
         </View>
       </View>
@@ -163,18 +125,27 @@ function ParticipantCard({ participant }) {
   );
 }
 
-function ParticipantSection() {
+function ParticipantSection({ participants, onNudge, nudging }) {
+  const hasPending = participants.some((p) => p.status !== 'paid');
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Participant{'\n'}Status</Text>
-        <TouchableOpacity activeOpacity={0.85} style={styles.nudgeButton}>
-          <MaterialIcons name="campaign" size={16} color={colors.onSecondary} />
-          <Text style={styles.nudgeText}>Nudge{'\n'}Pending</Text>
-        </TouchableOpacity>
+        {hasPending && (
+          <TouchableOpacity activeOpacity={0.85} style={styles.nudgeButton} onPress={onNudge} disabled={nudging}>
+            {nudging ? (
+              <ActivityIndicator size="small" color={colors.onSecondary} />
+            ) : (
+              <>
+                <MaterialIcons name="campaign" size={16} color={colors.onSecondary} />
+                <Text style={styles.nudgeText}>Nudge{'\n'}Pending</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
       <View style={styles.participantList}>
-        {PARTICIPANTS.map((p) => (
+        {participants.map((p) => (
           <ParticipantCard key={p.id} participant={p} />
         ))}
       </View>
@@ -196,57 +167,167 @@ function CashCallout({ onMarkPaid }) {
   );
 }
 
-function BottomNavBar({ insets }) {
-  const NAV = [
-    { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', active: false },
-    { key: 'activity', label: 'Activity', icon: 'receipt-long', active: true },
-    { key: 'profile', label: 'Profile', icon: 'person', active: false },
-  ];
-
-  return (
-    <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      {NAV.map((item) => (
-        <TouchableOpacity
-          key={item.key}
-          style={[styles.navItem, item.active && styles.navItemActive]}
-          activeOpacity={0.7}
-        >
-          <MaterialIcons
-            name={item.icon}
-            size={24}
-            color={item.active ? colors.secondary : colors.outlineVariant}
-          />
-          <Text style={[styles.navLabel, item.active && styles.navLabelActive]}>
-            {item.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-export default function ActivityDetailScreen({ navigation }) {
+export default function ActivityDetailScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const billId = route?.params?.billId;
+
+  const [bill, setBill] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [paymentsByMember, setPaymentsByMember] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [nudging, setNudging] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    if (!billId) return;
+    try {
+      const [sumRes, payRes] = await Promise.all([
+        billsApi.getSummary(billId),
+        paymentsApi.listForBill(billId),
+      ]);
+      const data = sumRes.data;
+      setBill(data.bill);
+      setMembers(data.members ?? []);
+
+      const paidMap = {};
+      (payRes.data ?? []).forEach((p) => {
+        if (p.status === 'succeeded') {
+          const mid = String(p.bill_member_id);
+          paidMap[mid] = (paidMap[mid] || 0) + parseFloat(p.amount ?? 0);
+        }
+      });
+      setPaymentsByMember(paidMap);
+    } catch {
+      // keep whatever state we have
+    }
+  }, [billId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setLoading(true);
+      fetchData().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+      return () => { cancelled = true; };
+    }, [fetchData]),
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }, [fetchData]);
+
+  const handleNudge = async () => {
+    setNudging(true);
+    try {
+      await invitesApi.share(billId);
+      Alert.alert('Reminders sent', 'Payment reminders have been sent to pending members.');
+    } catch {
+      Alert.alert('Error', 'Failed to send reminders. Please try again.');
+    } finally {
+      setNudging(false);
+    }
+  };
+
+  const billTotal = parseFloat(bill?.total ?? 0);
+  const collected = Object.values(paymentsByMember).reduce((s, v) => s + v, 0);
+  const remaining = Math.max(0, billTotal - collected);
+
+  const uid = user?.id ? String(user.id) : null;
+
+  const participants = members.map((m) => {
+    const mid = String(m.id);
+    const paid = paymentsByMember[mid] || 0;
+    const isMe = uid && m.user_id != null && String(m.user_id) === uid;
+    const status = paid > 0 ? 'paid' : 'pending';
+    const detail = paid > 0
+      ? `Paid ${formatMoney(paid)}`
+      : 'Awaiting payment';
+    return {
+      id: mid,
+      name: `${m.nickname || 'Member'}${isMe ? ' (You)' : ''}`,
+      detail,
+      amount: paid > 0 ? paid : parseFloat(m.amount_owed ?? 0),
+      status,
+    };
+  });
+
+  const myMember = members.find(
+    (m) => uid && m.user_id != null && String(m.user_id) === uid,
+  );
+  const myPaid = myMember ? (paymentsByMember[String(myMember.id)] || 0) : 0;
+  const showPayMyShare = myMember && myPaid <= 0;
+
+  if (loading) {
+    return (
+      <View style={[styles.root, styles.centered]}>
+        <ActivityIndicator size="large" color={colors.secondary} />
+      </View>
+    );
+  }
+
+  if (!bill) {
+    return (
+      <View style={[styles.root, styles.centered]}>
+        <Text style={styles.errorText}>Bill not found.</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 16 }}>
+          <Text style={styles.linkText}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
-      <TopAppBar insets={insets} />
+      <TopAppBar
+        insets={insets}
+        onBack={navigation?.canGoBack?.() ? navigation.goBack : null}
+        title={bill?.merchant_name || bill?.title}
+      />
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 72, paddingBottom: insets.bottom + 100 },
+          { paddingTop: insets.top + 72, paddingBottom: insets.bottom + 40 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.secondary} />
+        }
       >
-        <BillHeader />
-        <ProgressCard />
-        <ParticipantSection />
-        <CashCallout onMarkPaid={() => navigation.navigate('FundsCollected')} />
-      </ScrollView>
+        <BillHeader bill={bill} memberCount={members.length} />
+        <ProgressCard collected={collected} remaining={remaining} total={billTotal} />
+        <ParticipantSection participants={participants} onNudge={handleNudge} nudging={nudging} />
 
-      <BottomNavBar insets={insets} />
+        {showPayMyShare && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('ReviewPayment', { billId })}
+            style={{ marginBottom: 20 }}
+          >
+            <LinearGradient
+              colors={[colors.secondary, colors.secondaryDim]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.payMyShareButton, shadows.settleButton]}
+            >
+              <MaterialIcons name="payment" size={20} color={colors.onSecondary} />
+              <Text style={styles.payMyShareText}>Pay My Share</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        <CashCallout onMarkPaid={() => navigation.navigate('FundsCollected', {
+          amount: collected,
+          merchantName: bill?.merchant_name || bill?.title,
+          billTitle: bill?.title,
+          billId,
+        })} />
+      </ScrollView>
     </View>
   );
 }
@@ -256,8 +337,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 16,
+    color: colors.onSurfaceVariant,
+    textAlign: 'center',
+  },
+  linkText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    color: colors.secondary,
+  },
 
-  // Top Bar
   topBar: {
     position: 'absolute',
     top: 0,
@@ -281,30 +377,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
-  avatarContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.secondaryContainer,
-  },
-  profileAvatar: {
-    width: 32,
-    height: 32,
+  backButton: {
+    padding: 4,
+    marginRight: 4,
   },
   appTitle: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.8,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
     color: colors.onSurface,
+    flex: 1,
   },
   iconButton: {
     padding: 8,
   },
 
-  // Scroll
   scroll: {
     flex: 1,
   },
@@ -312,7 +402,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
 
-  // Bill Header
   billHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -357,7 +446,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Progress Card
   progressCard: {
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: radii.xl,
@@ -422,7 +510,6 @@ const styles = StyleSheet.create({
     color: colors.outline,
   },
 
-  // Section
   section: {
     marginBottom: 28,
   },
@@ -457,7 +544,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // Participant List
   participantList: {
     gap: 12,
   },
@@ -479,12 +565,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceContainerHigh,
+    backgroundColor: colors.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  participantAvatar: {
-    width: 48,
-    height: 48,
+  participantInitial: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 18,
+    color: colors.secondary,
   },
   participantName: {
     fontFamily: 'Manrope_700Bold',
@@ -521,7 +609,21 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // Cash Callout
+  payMyShareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 56,
+    borderRadius: radii.full,
+  },
+  payMyShareText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.onSecondary,
+  },
+
   cashCallout: {
     backgroundColor: colors.surfaceContainerHigh,
     borderRadius: radii.xl,
@@ -554,49 +656,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
     fontWeight: '700',
-    color: colors.secondary,
-  },
-
-  // Bottom Nav
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 50,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingTop: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-    ...Platform.select({
-      ios: {},
-      android: { backgroundColor: 'rgba(255, 255, 255, 0.95)' },
-    }),
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    ...shadows.ambient,
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  navItemActive: {
-    backgroundColor: 'rgba(0, 108, 92, 0.08)',
-  },
-  navLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginTop: 4,
-    color: colors.outlineVariant,
-  },
-  navLabelActive: {
     color: colors.secondary,
   },
 });

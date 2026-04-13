@@ -14,7 +14,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows } from '../theme';
-import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi } from '../services/api';
+import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, invites as invitesApi } from '../services/api';
 
 function formatCurrency(value) {
   const num = typeof value === 'string' ? parseFloat(value) : (value ?? 0);
@@ -660,7 +660,12 @@ export default function BillSplitScreen({ navigation, route }) {
     setSaving(true);
     try {
       await assignmentsApi.create(billId, assignmentsList);
-      navigation.navigate('ReviewPayment', { billId });
+      try {
+        await invitesApi.share(billId);
+      } catch {
+        // SMS delivery is best-effort; don't block navigation
+      }
+      navigation.navigate('ActivityDetail', { billId });
     } catch (err) {
       Alert.alert('Error', err?.error?.message ?? 'Failed to save assignments');
     } finally {
