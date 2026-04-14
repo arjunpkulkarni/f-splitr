@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import WealthSplitLogoMark from '../components/WealthSplitLogoMark';
+import SettldLogoMark from '../components/SettldLogoMark';
 import LandingCtaButton from '../components/LandingCtaButton';
 import { colors, spacing } from '../theme';
 
@@ -42,10 +42,10 @@ export default function LandingScreen({ navigation }) {
 
       <View style={styles.hero}>
         <View style={styles.logoGlow}>
-          <WealthSplitLogoMark size={Math.min(168, SCREEN_H * 0.2)} color={colors.white} />
+          <SettldLogoMark size={Math.min(168, SCREEN_H * 0.2)} color={colors.white} />
         </View>
-        <Text style={styles.title}>WealthSplit</Text>
-        <Text style={styles.tagline}>Split bills with friends, effortlessly.</Text>
+        <Text style={styles.title}>settld</Text>
+        <Text style={styles.tagline}>Split bills, settle up instantly.</Text>
       </View>
 
       <View style={[styles.ctaColumn, { paddingBottom: Math.max(insets.bottom, 12) }]}>

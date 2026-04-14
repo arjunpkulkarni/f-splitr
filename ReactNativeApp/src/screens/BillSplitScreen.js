@@ -699,14 +699,14 @@ export default function BillSplitScreen({ navigation, route }) {
 
       Alert.alert(
         'Invite Friends',
-        `Share this code: ${token}\n\nFriends can join by opening SPLTR and entering this code.`,
+        `Share this code: ${token}\n\nFriends can join by opening settld and entering this code.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Share',
             onPress: async () => {
               await Share.share({
-                message: `Join me on ${billTitle}!\n\nDownload SPLTR and use code: ${token}`,
+                message: `Join me on ${billTitle}!\n\nOpen settld and use code: ${token}\nhttps://app.settld.live/invite/${token}`,
                 title: `Join ${billTitle}`,
               });
             },

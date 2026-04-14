@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ReactNativeApp",
-    "slug": "ReactNativeApp",
+    "name": "settld",
+    "slug": "settld",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,25 +9,22 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#006c5c"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.settld.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#006c5c"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.settld.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "name": "SPLTR - Pay Your Share",
-      "shortName": "SPLTR",
-      "description": "Pay your share of a split bill securely via Stripe.",
-      "themeColor": "#006c5c",
-      "backgroundColor": "#f8f9fa"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font"

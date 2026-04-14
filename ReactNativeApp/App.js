@@ -31,24 +31,10 @@ import ActivityDetailScreen from './src/screens/ActivityDetailScreen';
 import ScanReceiptScreen from './src/screens/ScanReceiptScreen';
 import FundsCollectedScreen from './src/screens/FundsCollectedScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
-import PayPublicScreen from './src/screens/PayPublicScreen';
 import MainTabNavigator from './src/navigation/MainTabNavigator';
 
-const RootStack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator();
 const MainStack = createNativeStackNavigator();
-
-const linking = {
-  prefixes: ['https://app.wealthsplit.com', 'http://localhost:8081'],
-  config: {
-    screens: {
-      PayPublic: 'pay/:token',
-      AppRoot: {
-        screens: {},
-      },
-    },
-  },
-};
 
 function AuthNavigator() {
   return (
@@ -133,15 +119,6 @@ function AppRoot() {
   return user ? <MainNavigator /> : <AuthNavigator />;
 }
 
-function RootNavigator() {
-  return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
-      <RootStack.Screen name="AppRoot" component={AppRoot} />
-      <RootStack.Screen name="PayPublic" component={PayPublicScreen} />
-    </RootStack.Navigator>
-  );
-}
-
 export default function App() {
   const [fontsLoaded] = useFonts({
     Manrope_400Regular,
@@ -167,9 +144,9 @@ export default function App() {
     <GestureHandlerRootView style={styles.gestureRoot}>
       <SafeAreaProvider>
         <AuthProvider>
-          <NavigationContainer linking={linking}>
+          <NavigationContainer>
             <StatusBar style="dark" />
-            <RootNavigator />
+            <AppRoot />
           </NavigationContainer>
         </AuthProvider>
       </SafeAreaProvider>

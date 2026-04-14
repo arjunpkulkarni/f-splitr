@@ -128,7 +128,7 @@ export default function PhoneAuthScreen({ navigation, route }) {
           ) : (
             <View style={styles.headerSpacer} />
           )}
-          <Text style={styles.brandTitle}>WealthSplit</Text>
+          <Text style={styles.brandTitle}>settld</Text>
           <View style={styles.headerSpacer} />
         </View>
         <View style={styles.headerDivider} />
@@ -188,7 +188,7 @@ export default function PhoneAuthScreen({ navigation, route }) {
             <View style={styles.infoTextCol}>
               <Text style={styles.infoTitle}>Standard Rates Apply</Text>
               <Text style={styles.infoBody}>
-                WealthSplit will send a one-time SMS code to verify your identity. Carrier
+                settld will send a one-time SMS code to verify your identity. Carrier
                 fees for text messaging may apply.
               </Text>
             </View>

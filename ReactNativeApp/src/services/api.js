@@ -6,7 +6,7 @@ const DEV_BASE =
   Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
 
 /** Dev/prod API origin — exported for debug logs (LoginScreen, etc.). */
-export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app';
+export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.settld.live';
 
 function logAxiosFailure(error) {
   if (!__DEV__) return;
@@ -25,7 +25,7 @@ function logAxiosFailure(error) {
     hints.push('Android emulator: 10.0.2.2 maps to host localhost.');
   }
   const body = error.response?.data;
-  console.warn('[SPLTR API] request failed', {
+  console.warn('[settld API] request failed', {
     message: error.message,
     code: error.code,
     method: cfg?.method?.toUpperCase(),
@@ -276,12 +276,6 @@ export const notifications = {
 
   markRead: (notificationId) =>
     client.patch(`/notifications/${notificationId}/read`),
-};
-
-// ─── Public Pay (no auth) ────────────────────────────────────────────────────
-export const payPublic = {
-  getPaymentInfo: (token) =>
-    axios.get(`${BASE_URL}/pay/${token}`).then((r) => r.data),
 };
 
 // ─── Health ──────────────────────────────────────────────────────────────────

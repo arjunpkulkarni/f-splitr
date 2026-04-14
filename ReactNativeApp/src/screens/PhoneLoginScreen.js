@@ -82,7 +82,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
     setError(null);
     setLoading(true);
     if (__DEV__) {
-      console.log('[SPLTR] phone_login send_otp attempt', {
+      console.log('[settld] phone_login send_otp attempt', {
         phone_tail: maskPhoneTail(e164),
         baseUrl: BASE_URL,
       });
@@ -91,7 +91,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
       const body = await authApi.sendOtp(e164, 'login');
       const data = unwrap(body);
       if (__DEV__) {
-        console.log('[SPLTR] phone_login send_otp ok', {
+        console.log('[settld] phone_login send_otp ok', {
           phone_tail: maskPhoneTail(e164),
           otp_dev_mode: data?.otp_dev_mode,
         });
@@ -106,7 +106,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
       const code = err instanceof ApiError ? err.code : 'ERROR';
       const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
       if (__DEV__) {
-        console.warn('[SPLTR] phone_login send_otp failed', {
+        console.warn('[settld] phone_login send_otp failed', {
           code,
           message: msg,
           phone_tail: maskPhoneTail(e164),
@@ -158,7 +158,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
             >
               <MaterialIcons name="arrow-back" size={24} color={colors.secondary} />
             </TouchableOpacity>
-            <Text style={styles.brandTitle}>WealthSplit</Text>
+            <Text style={styles.brandTitle}>settld</Text>
             <View style={styles.topBarSpacer} />
           </View>
           <View style={styles.headerDivider} />
@@ -207,7 +207,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
             <View style={styles.infoRow}>
               <MaterialIcons name="info-outline" size={18} color={colors.outline} style={styles.infoIcon} />
               <Text style={styles.infoText}>
-                WealthSplit will send a one-time SMS code to verify your identity. Standard carrier
+                settld will send a one-time SMS code to verify your identity. Standard carrier
                 fees may apply.
               </Text>
             </View>

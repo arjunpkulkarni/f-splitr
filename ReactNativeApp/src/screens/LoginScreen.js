@@ -26,7 +26,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (__DEV__) {
-      console.log('[SPLTR] Login button pressed', { platform: Platform.OS });
+      console.log('[settld] Login button pressed', { platform: Platform.OS });
     }
     if (!email.trim() || !password) {
       setError('Please fill in all fields');
@@ -34,8 +34,8 @@ export default function LoginScreen({ navigation }) {
     }
     if (__DEV__) {
       const loginPath = '/auth/login';
-      console.log('[SPLTR] API_BASE_URL:', BASE_URL);
-      console.log('[SPLTR] FULL LOGIN URL:', `${BASE_URL}${loginPath}`);
+      console.log('[settld] API_BASE_URL:', BASE_URL);
+      console.log('[settld] FULL LOGIN URL:', `${BASE_URL}${loginPath}`);
     }
     setError('');
     setLoading(true);
@@ -43,7 +43,7 @@ export default function LoginScreen({ navigation }) {
       await login(email.trim().toLowerCase(), password);
     } catch (err) {
       if (__DEV__) {
-        console.warn('[SPLTR] Login failed (app error shape)', {
+        console.warn('[settld] Login failed (app error shape)', {
           message: err?.error?.message,
           code: err?.error?.code,
           status: err?.status,
@@ -63,8 +63,8 @@ export default function LoginScreen({ navigation }) {
     >
       <View style={[styles.container, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 24 }]}>
         <View style={styles.header}>
-          <Text style={styles.logo}>SPLTR</Text>
-          <Text style={styles.tagline}>Split bills with friends, effortlessly.</Text>
+          <Text style={styles.logo}>settld</Text>
+          <Text style={styles.tagline}>Split bills, settle up instantly.</Text>
         </View>
 
         <View style={styles.form}>

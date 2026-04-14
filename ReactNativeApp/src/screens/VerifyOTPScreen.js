@@ -146,7 +146,7 @@ export default function VerifyOTPScreen({ navigation, route }) {
           >
             <MaterialIcons name="arrow-back" size={24} color={colors.secondary} />
           </TouchableOpacity>
-          <Text style={styles.brandTitle}>WealthSplit</Text>
+          <Text style={styles.brandTitle}>settld</Text>
           <View style={styles.headerSpacer} />
         </View>
         <View style={styles.headerDivider} />

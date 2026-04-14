@@ -156,7 +156,7 @@ function TopAppBar({ insets, user, onNotificationsPress, unreadCount }) {
     .toUpperCase() || '?';
 
   const onLogout = () => {
-    Alert.alert('Log out', 'Sign out of WealthSplit on this device?', [
+    Alert.alert('Log out', 'Sign out of settld on this device?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Log out', style: 'destructive', onPress: () => logout() },
     ]);

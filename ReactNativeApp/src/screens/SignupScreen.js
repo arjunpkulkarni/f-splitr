@@ -28,7 +28,7 @@ export default function SignupScreen({ navigation }) {
 
   const handleSignup = async () => {
     if (__DEV__) {
-      console.log('[SPLTR] Sign up button pressed', { platform: Platform.OS });
+      console.log('[settld] Sign up button pressed', { platform: Platform.OS });
     }
     if (!fullName.trim() || !email.trim() || !password) {
       setError('Please fill in all fields');
@@ -40,8 +40,8 @@ export default function SignupScreen({ navigation }) {
     }
     if (__DEV__) {
       const signupPath = '/auth/signup';
-      console.log('[SPLTR] API_BASE_URL:', BASE_URL);
-      console.log('[SPLTR] FULL SIGNUP URL:', `${BASE_URL}${signupPath}`);
+      console.log('[settld] API_BASE_URL:', BASE_URL);
+      console.log('[settld] FULL SIGNUP URL:', `${BASE_URL}${signupPath}`);
     }
     setError('');
     setLoading(true);
@@ -49,7 +49,7 @@ export default function SignupScreen({ navigation }) {
       await signup(email.trim().toLowerCase(), password, fullName.trim());
     } catch (err) {
       if (__DEV__) {
-        console.warn('[SPLTR] Signup failed (app error shape)', {
+        console.warn('[settld] Signup failed (app error shape)', {
           message: err?.error?.message,
           code: err?.error?.code,
           status: err?.status,
@@ -76,7 +76,7 @@ export default function SignupScreen({ navigation }) {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join SPLTR and start splitting bills.</Text>
+          <Text style={styles.subtitle}>Join settld and start splitting bills.</Text>
         </View>
 
         <View style={styles.form}>

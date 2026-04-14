@@ -32,7 +32,7 @@ function TopAppBar({ insets, user }) {
   return (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       <View style={styles.topBarInner}>
-        <Text style={styles.appTitle}>SPLTR</Text>
+        <Text style={styles.appTitle}>settld</Text>
         <View style={styles.headerRight}>
           <View style={styles.avatarWrap}>
             {user?.avatar_url ? (
