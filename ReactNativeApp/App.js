@@ -33,6 +33,7 @@ import ScanReceiptScreen from './src/screens/ScanReceiptScreen';
 import FundsCollectedScreen from './src/screens/FundsCollectedScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import JoinBillScreen from './src/screens/JoinBillScreen';
+import AddPaymentMethodScreen from './src/screens/AddPaymentMethodScreen';
 import MainTabNavigator from './src/navigation/MainTabNavigator';
 
 const AuthStack = createNativeStackNavigator();
@@ -107,6 +108,11 @@ function MainNavigator() {
         name="JoinBill"
         component={JoinBillScreen}
         options={{ animation: 'slide_from_right' }}
+      />
+      <MainStack.Screen
+        name="AddPaymentMethod"
+        component={AddPaymentMethodScreen}
+        options={{ animation: 'slide_from_bottom' }}
       />
     </MainStack.Navigator>
   );

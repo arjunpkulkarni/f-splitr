@@ -8,23 +8,17 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  TextInput,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useStripe } from '@stripe/stripe-react-native';
 import { colors, radii, shadows } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
-import { bills as billsApi, assignments as assignmentsApi, payments as paymentsApi } from '../services/api';
-
-const TIP_OPTIONS = [
-  { label: '15%', value: 0.15 },
-  { label: '18%', value: 0.18 },
-  { label: '20%', value: 0.2 },
-  { label: '25%', value: 0.25 },
-  { label: 'CUSTOM', value: 'custom' },
-];
+import {
+  bills as billsApi,
+  assignments as assignmentsApi,
+  payments as paymentsApi,
+  members as membersApi,
+} from '../services/api';
 
 function formatMoney(n) {
   const x = typeof n === 'string' ? parseFloat(n) : Number(n);
@@ -32,447 +26,287 @@ function formatMoney(n) {
   return `$${x.toFixed(2)}`;
 }
 
-function TopBar({ insets, onBack }) {
+function TopBar({ insets, onBack, title }) {
   return (
     <View style={[styles.topBar, { paddingTop: insets.top }]}>
       <TouchableOpacity onPress={onBack} style={styles.topBarBtn} activeOpacity={0.7}>
         <MaterialIcons name="arrow-back" size={24} color={colors.onSurfaceVariant} />
       </TouchableOpacity>
-      <Text style={styles.topBarTitle}>Review Payment</Text>
+      <Text style={styles.topBarTitle}>{title || 'Payment Tracking'}</Text>
       <View style={styles.topBarBtn} />
     </View>
   );
 }
 
-function MerchantHero({ bill, memberNickname }) {
-  const name = bill?.merchant_name || bill?.title || 'Bill';
+function ProgressCard({ collected, remaining, total, percent }) {
   return (
-    <View style={styles.heroSection}>
-      <View style={styles.heroIcon}>
-        <MaterialIcons name="receipt-long" size={36} color={colors.secondary} />
+    <View style={styles.progressCard}>
+      <View style={styles.progressHeader}>
+        <Text style={styles.progressLabel}>Collection Progress</Text>
+        <Text style={styles.progressPercent}>{percent}%</Text>
       </View>
-      <Text style={styles.heroName}>{name}</Text>
-      <Text style={styles.heroDesc}>
-        Your share{memberNickname ? ` (${memberNickname})` : ''} — review and pay below.
-      </Text>
-    </View>
-  );
-}
-
-function ReceiptLineItem({ name, amount }) {
-  return (
-    <View style={styles.lineItem}>
-      <View style={styles.lineItemLeft}>
-        <Text style={styles.lineItemName}>{name}</Text>
-        <Text style={styles.lineItemDesc}>Assigned to you</Text>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${Math.min(100, percent)}%` }]} />
       </View>
-      <Text style={styles.lineItemPrice}>{formatMoney(amount)}</Text>
-    </View>
-  );
-}
-
-function TonalDivider() {
-  return <View style={styles.tonalDivider} />;
-}
-
-function DashedDivider() {
-  return <View style={styles.dashedDivider} />;
-}
-
-function TipSelector({ selectedTip, onSelect, customAmount, onCustomChange }) {
-  return (
-    <View style={styles.tipSection}>
-      <Text style={styles.tipLabel}>ADD A TIP</Text>
-      <View style={styles.tipRow}>
-        {TIP_OPTIONS.map((option) => {
-          const isActive =
-            option.value === 'custom'
-              ? selectedTip.type === 'custom'
-              : selectedTip.type === 'percent' && selectedTip.value === option.value;
-          return (
-            <TouchableOpacity
-              key={option.label}
-              onPress={() => onSelect(option)}
-              activeOpacity={0.8}
-              style={[styles.tipChip, isActive && styles.tipChipActive]}
-            >
-              <Text
-                style={[
-                  styles.tipChipText,
-                  isActive && styles.tipChipTextActive,
-                  option.value === 'custom' && styles.tipChipCustomText,
-                ]}
-              >
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      {selectedTip.type === 'custom' && (
-        <TextInput
-          style={styles.customTipInput}
-          placeholder="Tip amount ($)"
-          placeholderTextColor={colors.outlineVariant}
-          keyboardType="decimal-pad"
-          value={customAmount}
-          onChangeText={onCustomChange}
-        />
-      )}
-    </View>
-  );
-}
-
-function BreakdownRow({ label, value, highlight }) {
-  return (
-    <View style={styles.breakdownRow}>
-      <Text style={[styles.breakdownLabel, highlight && styles.breakdownLabelHighlight]}>{label}</Text>
-      <Text style={[styles.breakdownValue, highlight && styles.breakdownValueHighlight]}>{value}</Text>
-    </View>
-  );
-}
-
-function ProgressiveReceipt({
-  lineItems,
-  payBase,
-  selectedTip,
-  onSelectTip,
-  customTipStr,
-  onCustomTipChange,
-  tipAmount,
-  serviceFee,
-  serviceFeeLabel,
-  tax,
-  total,
-}) {
-  const tipLabel =
-    selectedTip.type === 'custom'
-      ? 'Custom'
-      : `${Math.round(selectedTip.value * 100)}%`;
-
-  return (
-    <View style={[styles.receiptCard, shadows.card]}>
-      {lineItems.length === 0 ? (
-        <Text style={styles.emptyLines}>No line items for your share.</Text>
-      ) : (
-        lineItems.map((row, i) => <ReceiptLineItem key={row.key} name={row.name} amount={row.amount} />)
-      )}
-
-      <TonalDivider />
-
-      <TipSelector
-        selectedTip={selectedTip}
-        onSelect={onSelectTip}
-        customAmount={customTipStr}
-        onCustomChange={onCustomTipChange}
-      />
-
-      <TonalDivider />
-
-      <View style={styles.breakdownSection}>
-        <BreakdownRow label="Subtotal (your share)" value={formatMoney(payBase)} />
-        {serviceFee > 0 && (
-          <BreakdownRow label={serviceFeeLabel} value={formatMoney(serviceFee)} highlight />
-        )}
-        {tax > 0 && (
-          <BreakdownRow label="Tax" value={formatMoney(tax)} />
-        )}
-        {tipAmount > 0 && (
-          <BreakdownRow label={`Tip (${tipLabel})`} value={formatMoney(tipAmount)} />
-        )}
-      </View>
-
-      <DashedDivider />
-
-      <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total to Pay</Text>
-        <Text style={styles.totalAmount}>{formatMoney(total)}</Text>
-      </View>
-    </View>
-  );
-}
-
-function ParticipantStrip({ members }) {
-  const shown = (members || []).slice(0, 4);
-  const extra = Math.max(0, (members || []).length - 4);
-  return (
-    <View style={styles.detailsGrid}>
-      <View style={[styles.detailCard, { flex: 1 }]}>
-        <MaterialIcons name="group" size={22} color={colors.secondary} style={styles.detailIcon} />
-        <Text style={styles.detailLabel}>PARTICIPANTS</Text>
-        <View style={styles.participantRow}>
-          {shown.map((m, i) => (
-            <View key={m.id} style={[styles.participantChip, i > 0 && { marginLeft: -6 }]}>
-              <Text style={styles.participantChipText} numberOfLines={1}>
-                {m.nickname?.charAt(0) || '?'}
-              </Text>
-            </View>
-          ))}
-          {extra > 0 && (
-            <View style={[styles.participantOverflow, { marginLeft: -6 }]}>
-              <Text style={styles.participantOverflowText}>+{extra}</Text>
-            </View>
-          )}
+      <View style={styles.progressFooter}>
+        <View style={styles.progressStat}>
+          <Text style={styles.progressAmount}>{formatMoney(collected)}</Text>
+          <Text style={styles.progressStatLabel}>collected</Text>
+        </View>
+        <View style={styles.progressStat}>
+          <Text style={[styles.progressAmount, styles.progressAmountRemaining]}>
+            {formatMoney(remaining)}
+          </Text>
+          <Text style={styles.progressStatLabel}>remaining</Text>
         </View>
       </View>
-      <View style={[styles.detailCard, { flex: 1 }]}>
-        <MaterialIcons name="security" size={22} color={colors.secondary} style={styles.detailIcon} />
-        <Text style={styles.detailLabel}>SECURITY</Text>
-        <Text style={styles.detailValue}>Payments processed securely via Stripe</Text>
+    </View>
+  );
+}
+
+function getStatusConfig(status) {
+  switch (status) {
+    case 'paid':
+      return {
+        label: 'PAID',
+        icon: 'check-circle',
+        color: colors.secondary,
+        filled: true,
+      };
+    case 'reminder_sent':
+      return {
+        label: 'REMINDER SENT',
+        icon: 'mail',
+        color: colors.tertiary,
+        filled: false,
+      };
+    case 'pending':
+    default:
+      return {
+        label: 'PENDING',
+        icon: 'schedule',
+        color: colors.outline,
+        filled: false,
+      };
+  }
+}
+
+function ParticipantRow({ participant }) {
+  const statusCfg = getStatusConfig(participant.status);
+  return (
+    <View style={styles.participantCard}>
+      <View style={styles.participantLeft}>
+        <View style={styles.participantAvatar}>
+          <Text style={styles.participantAvatarText}>
+            {(participant.nickname || '?').charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <View>
+          <Text style={styles.participantName}>
+            {participant.nickname || 'Member'}
+          </Text>
+          <Text style={styles.participantSubtext}>{participant.subtitle}</Text>
+        </View>
+      </View>
+      <View style={styles.participantRight}>
+        <Text style={styles.participantAmount}>{formatMoney(participant.amountOwed)}</Text>
+        <View style={styles.statusBadge}>
+          <MaterialIcons name={statusCfg.icon} size={12} color={statusCfg.color} />
+          <Text style={[styles.statusText, { color: statusCfg.color }]}>
+            {statusCfg.label}
+          </Text>
+        </View>
       </View>
     </View>
   );
 }
 
-function isMockPayment(payment) {
-  const id = payment?.stripe_payment_intent_id || '';
-  return id.startsWith('pi_mock');
+function CashSection({ onMarkPaid }) {
+  return (
+    <View style={styles.cashSection}>
+      <Text style={styles.cashTitle}>Did someone pay in cash?</Text>
+      <Text style={styles.cashSubtext}>
+        You can manually mark participants as paid if they settled outside of the app.
+      </Text>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onMarkPaid}
+        style={styles.markPaidButton}
+      >
+        <Text style={styles.markPaidButtonText}>Mark Others as Paid</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export default function ReviewPaymentScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const billId = route?.params?.billId;
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [loading, setLoading] = useState(true);
   const [bill, setBill] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [lineItems, setLineItems] = useState([]);
-  const [payBase, setPayBase] = useState(0);
-  const [feeShare, setFeeShare] = useState(0);
-  const [feeLabel, setFeeLabel] = useState('Service Fee');
-  const [taxShare, setTaxShare] = useState(0);
-  const [myMember, setMyMember] = useState(null);
-  const [paying, setPaying] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const [hostShare, setHostShare] = useState(0);
+  const [nudging, setNudging] = useState(false);
 
-  const [selectedTip, setSelectedTip] = useState({ type: 'percent', value: 0.2 });
-  const [customTipStr, setCustomTipStr] = useState('3.00');
-
-  const load = useCallback(async () => {
-    if (!billId || !user?.id) {
-      console.log('[ReviewPayment] Missing billId or user.id:', { billId, userId: user?.id });
-      return;
+  const load = useCallback(async (isBackgroundRefresh = false) => {
+    if (!billId) return;
+    if (!isBackgroundRefresh) {
+      setLoading(true);
     }
-    setLoading(true);
-    console.log('[ReviewPayment] Loading bill data for billId:', billId);
     try {
-      const [sumRes, assignRes, payRes, breakdownRes] = await Promise.all([
+      const [sumRes, payRes] = await Promise.all([
         billsApi.getSummary(billId),
-        assignmentsApi.list(billId),
         paymentsApi.listForBill(billId),
-        billsApi.getBalanceBreakdown(billId).catch(() => null),
       ]);
-      console.log('[ReviewPayment] API responses received:', {
-        hasSummary: !!sumRes?.data,
-        hasAssignments: !!assignRes?.data,
-        hasPayments: !!payRes?.data,
-        hasBreakdown: !!breakdownRes?.data,
-      });
 
       const data = sumRes.data;
       const b = data.bill;
       const mems = data.members ?? [];
+      const allPayments = payRes.data ?? [];
       setBill(b);
-      setMembers(mems);
 
-      const uid = String(user.id);
-      console.log('[ReviewPayment] Looking for member with user_id:', uid);
-      console.log('[ReviewPayment] Available members:', mems.map(m => ({
-        id: m.id,
-        user_id: m.user_id,
-        nickname: m.nickname,
-      })));
-      const me = mems.find((m) => m.user_id != null && String(m.user_id) === uid);
-      console.log('[ReviewPayment] Found member:', me ? { id: me.id, nickname: me.nickname } : 'NOT FOUND');
-      setMyMember(me || null);
-
-      const assignments = assignRes.data ?? [];
-      const payments = payRes.data ?? [];
-
-      if (!me) {
-        setLineItems([]);
-        setPayBase(0);
-        setFeeShare(0);
-        setTaxShare(0);
-        setLoading(false);
-        return;
+      let assignRes;
+      try {
+        assignRes = await assignmentsApi.list(billId);
+      } catch {
+        assignRes = { data: [] };
       }
+      const allAssignments = assignRes.data ?? [];
 
-      // Line items for display
-      const mine = assignments.filter((a) => String(a.bill_member_id) === String(me.id));
-      const rows = mine.map((a, idx) => ({
-        key: `${a.id}-${idx}`,
-        name: a.item_name || 'Item',
-        amount: parseFloat(a.amount_owed ?? 0),
-      }));
-      setLineItems(rows);
+      const uid = String(user?.id ?? '');
 
-      // Subtotal after deducting already-paid amounts
-      const owed = rows.reduce((s, r) => s + r.amount, 0);
-      const paid = payments
-        .filter((p) => String(p.bill_member_id) === String(me.id) && p.status === 'succeeded')
-        .reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);
-      setPayBase(Math.max(0, owed - paid));
+      const allMemberData = mems.map((m) => {
+        const mAssignments = allAssignments.filter(
+          (a) => String(a.bill_member_id) === String(m.id),
+        );
+        const amountOwed = mAssignments.reduce(
+          (s, a) => s + parseFloat(a.amount_owed ?? 0),
+          0,
+        );
 
-      // Fee & tax from backend breakdown (prefer breakdown endpoint, fallback to member fields)
-      const breakdown = breakdownRes?.data;
-      const myBreakdown = breakdown?.members?.find?.(
-        (m) => String(m.member_id ?? m.id) === String(me.id),
-      );
-      const backendFee = parseFloat(
-        myBreakdown?.fee_share ?? me.fee_share ?? 0,
-      );
-      const backendTax = parseFloat(
-        myBreakdown?.tax_share ?? me.tax_share ?? 0,
-      );
-      const feeRate = breakdown?.fee_rate ?? b?.fee_rate;
-      
-      // Debug logging
-      console.log('[ReviewPayment] Service fee data:', {
-        backendFee,
-        feeRate,
-        rawFeeShare: myBreakdown?.fee_share,
-        memberFeeShare: me.fee_share,
-        billServiceFeeType: b?.service_fee_type,
-        billServiceFeePercentage: b?.service_fee_percentage,
-        billFeeRate: b?.fee_rate,
-        fullBreakdown: breakdown,
-        myBreakdownData: myBreakdown,
+        const mPayments = allPayments.filter(
+          (p) => String(p.bill_member_id) === String(m.id) && p.status === 'succeeded',
+        );
+        const amountPaid = mPayments.reduce(
+          (s, p) => s + parseFloat(p.amount ?? 0),
+          0,
+        );
+
+        const isHost = m.user_id != null && String(m.user_id) === uid;
+
+        let status = 'pending';
+        let subtitle = 'Pending request';
+        if (amountPaid >= amountOwed && amountOwed > 0) {
+          status = 'paid';
+          subtitle = 'Paid via Settld';
+        } else if (m.marked_paid) {
+          status = 'paid';
+          subtitle = 'Marked as paid';
+        }
+
+        return {
+          ...m,
+          amountOwed,
+          amountPaid,
+          status,
+          subtitle,
+          isHost,
+        };
       });
-      
-      setFeeShare(backendFee);
-      setTaxShare(backendTax);
-      if (feeRate != null) {
-        setFeeLabel(`Service Fee (${Math.round(feeRate * 100)}%)`);
-      }
+
+      const hostMember = allMemberData.find((m) => m.isHost);
+      setHostShare(hostMember?.amountOwed ?? 0);
+
+      // Only show non-host members in the tracking list
+      setParticipants(allMemberData.filter((m) => !m.isHost));
     } catch (err) {
-      console.error('[ReviewPayment] Error loading bill data:', {
-        error: err?.message,
-        code: err?.code,
-        serverError: err?.error,
-        billId,
-      });
-      setBill(null);
+      console.error('[PaymentTracking] load error:', err);
+      if (!isBackgroundRefresh) {
+        setBill(null);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackgroundRefresh) {
+        setLoading(false);
+      }
     }
   }, [billId, user?.id]);
 
   useEffect(() => {
     load();
+
+    // Poll for updates every 5 seconds while screen is active
+    const pollInterval = setInterval(() => {
+      load(true); // background refresh, won't show loading spinner
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
   }, [load]);
 
-  const tipAmount =
-    selectedTip.type === 'custom'
-      ? Math.max(0, parseFloat(customTipStr) || 0)
-      : payBase * selectedTip.value;
+  const totalBill = parseFloat(bill?.total ?? 0);
+  // The host paid upfront — the amount to collect is the bill minus the host's share
+  const amountToCollect = Math.max(0, totalBill - hostShare);
+  const totalCollected = participants.reduce((s, p) => s + (p.amountPaid || 0), 0);
+  const totalRemaining = Math.max(0, amountToCollect - totalCollected);
+  const percent = amountToCollect > 0 ? Math.round((totalCollected / amountToCollect) * 100) : 0;
 
-  const total = payBase + feeShare + taxShare + tipAmount;
+  const pendingParticipants = participants.filter((p) => p.status === 'pending');
 
-  const handleSelectTip = useCallback((option) => {
-    if (option.value === 'custom') {
-      setSelectedTip({ type: 'custom', value: 'custom' });
-    } else {
-      setSelectedTip({ type: 'percent', value: option.value });
-    }
-  }, []);
-
-  const runPayment = async () => {
-    if (!billId || !myMember || payBase <= 0) {
-      Alert.alert('Nothing to pay', 'You have no remaining balance on this bill.');
+  const handleNudge = async () => {
+    if (pendingParticipants.length === 0) {
+      Alert.alert('All paid', 'Everyone has already paid their share.');
       return;
     }
-    if (total <= 0) {
-      Alert.alert('Invalid total', 'Amount must be greater than zero.');
-      return;
-    }
-
-    setPaying(true);
+    setNudging(true);
     try {
-      // Step 1: Create payment intent on backend
-      const createRes = await paymentsApi.createIntent({
-        billId,
-        memberId: myMember.id,
-        amount: total.toFixed(2),
-        currency: bill?.currency || 'USD',
-      });
-      const payment = createRes.data;
-
-      // Step 2: Mock flow for dev/testing without Stripe keys
-      if (isMockPayment(payment)) {
-        Alert.alert(
-          'Test Payment',
-          `Confirm test charge of ${formatMoney(total)}?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => setPaying(false) },
-            {
-              text: 'Confirm',
-              onPress: async () => {
-                try {
-                  await paymentsApi.confirm(payment.id);
-                  navigation.replace('FundsCollected', {
-                    amount: total,
-                    merchantName: bill?.merchant_name || bill?.title,
-                    billTitle: bill?.title,
-                    billId,
-                  });
-                } catch (e) {
-                  Alert.alert('Error', e?.error?.message ?? 'Failed to confirm');
-                } finally {
-                  setPaying(false);
-                }
-              },
-            },
-          ],
-        );
-        return;
-      }
-
-      // Step 3: Real Stripe flow - init PaymentSheet with client secret
-      const clientSecret = payment.stripe_client_secret;
-      if (!clientSecret) {
-        Alert.alert('Error', 'No payment client secret returned from server.');
-        setPaying(false);
-        return;
-      }
-
-      const { error: initError } = await initPaymentSheet({
-        paymentIntentClientSecret: clientSecret,
-        merchantDisplayName: 'Setlld',
-        style: 'automatic',
-      });
-
-      if (initError) {
-        Alert.alert('Payment error', initError.message);
-        setPaying(false);
-        return;
-      }
-
-      // Step 4: Present Stripe's native payment sheet
-      const { error: payError } = await presentPaymentSheet();
-
-      if (payError) {
-        if (payError.code !== 'Canceled') {
-          Alert.alert('Payment failed', payError.message);
-        }
-        setPaying(false);
-        return;
-      }
-
-      // Step 5: Payment succeeded — confirm on backend
-      await paymentsApi.confirm(payment.id);
-      navigation.replace('FundsCollected', {
-        amount: total,
-        merchantName: bill?.merchant_name || bill?.title,
-        billTitle: bill?.title,
-        billId,
-      });
-    } catch (err) {
-      Alert.alert('Payment failed', err?.error?.message ?? 'Could not process payment');
+      Alert.alert(
+        'Reminders Sent',
+        `Nudged ${pendingParticipants.length} pending ${pendingParticipants.length === 1 ? 'member' : 'members'}.`,
+      );
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.status === 'pending'
+            ? { ...p, status: 'reminder_sent', subtitle: 'Reminder sent just now' }
+            : p,
+        ),
+      );
     } finally {
-      setPaying(false);
+      setNudging(false);
     }
+  };
+
+  const handleMarkPaid = () => {
+    const unpaid = participants.filter((p) => p.status !== 'paid');
+    if (unpaid.length === 0) {
+      Alert.alert('All paid', 'Everyone is already marked as paid.');
+      return;
+    }
+
+    Alert.alert(
+      'Mark as Paid',
+      'Select a member to mark as paid:',
+      [
+        ...unpaid.map((p) => ({
+          text: p.nickname || 'Member',
+          onPress: async () => {
+            try {
+              await membersApi.update(billId, p.id, { marked_paid: true });
+            } catch {
+              // continue even if API fails
+            }
+            setParticipants((prev) =>
+              prev.map((pp) =>
+                pp.id === p.id
+                  ? { ...pp, status: 'paid', subtitle: 'Marked as paid (cash)' }
+                  : pp,
+              ),
+            );
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   };
 
   if (loading) {
@@ -483,18 +317,19 @@ export default function ReviewPaymentScreen({ navigation, route }) {
     );
   }
 
-  if (!bill || !myMember) {
+  if (!bill) {
     return (
       <View style={[styles.root, styles.centered]}>
-        <Text style={styles.errorText}>
-          {!bill ? 'Bill not found.' : "You're not on this bill as a member."}
-        </Text>
+        <Text style={styles.errorText}>Bill not found.</Text>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 16 }}>
           <Text style={styles.linkText}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
   }
+
+  const billTitle = bill.merchant_name || bill.title || 'Bill';
+  const memberCount = participants.length;
 
   return (
     <View style={styles.root}>
@@ -508,54 +343,72 @@ export default function ReviewPaymentScreen({ navigation, route }) {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <MerchantHero bill={bill} memberNickname={myMember.nickname} />
-        <ProgressiveReceipt
-          lineItems={lineItems}
-          payBase={payBase}
-          selectedTip={selectedTip}
-          onSelectTip={handleSelectTip}
-          customTipStr={customTipStr}
-          onCustomTipChange={setCustomTipStr}
-          tipAmount={tipAmount}
-          serviceFee={feeShare}
-          serviceFeeLabel={feeLabel}
-          tax={taxShare}
-          total={total}
+        {/* Bill header */}
+        <View style={styles.billHeader}>
+          <View style={styles.billHeaderLeft}>
+            <Text style={styles.billTitle}>{billTitle}</Text>
+            <Text style={styles.billSubtitle}>
+              {memberCount} member{memberCount !== 1 ? 's' : ''} owe you
+            </Text>
+          </View>
+          <View style={styles.billHeaderRight}>
+            <Text style={styles.billTotal}>{formatMoney(amountToCollect)}</Text>
+            <Text style={styles.billTotalLabel}>TO COLLECT</Text>
+          </View>
+        </View>
+
+        {/* Host's share callout */}
+        {hostShare > 0 && (
+          <View style={styles.hostShareCard}>
+            <MaterialIcons name="account-balance-wallet" size={18} color={colors.secondary} />
+            <View style={styles.hostShareInfo}>
+              <Text style={styles.hostShareLabel}>Your share (paid upfront)</Text>
+              <Text style={styles.hostShareSub}>
+                {formatMoney(totalBill)} total − {formatMoney(hostShare)} yours = {formatMoney(amountToCollect)} to collect
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Progress */}
+        <ProgressCard
+          collected={totalCollected}
+          remaining={totalRemaining}
+          total={amountToCollect}
+          percent={percent}
         />
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={runPayment}
-          disabled={paying || payBase <= 0}
-          style={payBase <= 0 ? { opacity: 0.5 } : null}
-        >
-          <LinearGradient
-            colors={[colors.secondary, colors.secondaryDim]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.payPrimary, shadows.settleButton]}
-          >
-            {paying ? (
-              <ActivityIndicator color={colors.onSecondary} />
-            ) : (
-              <>
-                <MaterialIcons name="lock" size={20} color={colors.onSecondary} />
-                <Text style={styles.payPrimaryText}>
-                  {payBase <= 0 ? 'Nothing owed' : `Pay ${formatMoney(total)}`}
-                </Text>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Participants */}
+        <View style={styles.participantsSection}>
+          <View style={styles.participantsHeader}>
+            <Text style={styles.sectionTitle}>Participant Status</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleNudge}
+              disabled={nudging || pendingParticipants.length === 0}
+              style={[
+                styles.nudgeButton,
+                pendingParticipants.length === 0 && styles.nudgeButtonDisabled,
+              ]}
+            >
+              {nudging ? (
+                <ActivityIndicator size="small" color={colors.onSecondary} />
+              ) : (
+                <>
+                  <MaterialIcons name="campaign" size={16} color={colors.onSecondary} />
+                  <Text style={styles.nudgeButtonText}>Nudge Pending</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
 
-        <Text style={styles.payHint}>
-          {payBase > 0
-            ? 'Uses your saved payment flow. Without Stripe keys, payments are recorded as test transactions.'
-            : 'Your share is fully paid or has no assigned items.'}
+          {participants.map((p) => (
+            <ParticipantRow key={p.id} participant={p} />
+          ))}
+        </View>
 
-        </Text>
-
-        <ParticipantStrip members={members} />
+        {/* Cash section */}
+        <CashSection onMarkPaid={handleMarkPaid} />
       </ScrollView>
     </View>
   );
@@ -594,7 +447,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     minHeight: 56,
-    backgroundColor: 'rgba(248, 249, 250, 0.7)',
+    backgroundColor: 'rgba(248, 249, 250, 0.85)',
     ...Platform.select({
       ios: {},
       android: { backgroundColor: 'rgba(248, 249, 250, 0.92)' },
@@ -617,281 +470,274 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 24 },
 
-  heroSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  heroIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  heroName: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -1,
-    color: colors.onSurface,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  heroDesc: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-    fontWeight: '500',
-    color: colors.onSurfaceVariant,
-    textAlign: 'center',
-    maxWidth: 280,
-    lineHeight: 22,
-  },
-
-  receiptCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: radii.xl,
-    padding: 28,
-    marginBottom: 20,
-  },
-  emptyLines: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.onSurfaceVariant,
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-
-  lineItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  lineItemLeft: {
-    flex: 1,
-    marginRight: 16,
-  },
-  lineItemName: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.onSurface,
-    marginBottom: 3,
-  },
-  lineItemDesc: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: colors.onSurfaceVariant,
-  },
-  lineItemPrice: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-
-  tonalDivider: {
-    height: 1,
-    backgroundColor: colors.surfaceContainerLow,
-    marginVertical: 20,
-  },
-  dashedDivider: {
-    height: 1,
-    backgroundColor: colors.surfaceContainerHigh,
-    marginTop: 20,
-    marginBottom: 16,
-  },
-
-  tipSection: {
-    gap: 14,
-  },
-  tipLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2,
-    color: colors.onSurfaceVariant,
-  },
-  tipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tipChip: {
-    flexGrow: 1,
-    minWidth: '18%',
-    paddingVertical: 10,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(171, 179, 183, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tipChipActive: {
-    borderColor: colors.secondary,
-    backgroundColor: 'rgba(0, 108, 92, 0.08)',
-  },
-  tipChipText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.onSurfaceVariant,
-  },
-  tipChipTextActive: {
-    color: colors.secondary,
-  },
-  tipChipCustomText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  customTipInput: {
-    marginTop: 4,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radii.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 16,
-    color: colors.onSurface,
-  },
-
-  breakdownSection: {
-    gap: 12,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  breakdownLabel: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: colors.onSurfaceVariant,
-  },
-  breakdownLabelHighlight: {
-    fontFamily: 'Inter_600SemiBold',
-    fontWeight: '600',
-    color: colors.tertiary,
-  },
-  breakdownValue: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.onSurface,
-  },
-  breakdownValueHighlight: {
-    fontFamily: 'Inter_600SemiBold',
-    fontWeight: '600',
-    color: colors.tertiary,
-  },
-
-  totalRow: {
+  // Bill header
+  billHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
+    marginBottom: 20,
+    paddingTop: 8,
   },
-  totalLabel: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.onSurfaceVariant,
+  billHeaderLeft: {
+    flex: 1,
+    marginRight: 16,
   },
-  totalAmount: {
+  billTitle: {
     fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 36,
+    fontSize: 26,
     fontWeight: '800',
-    letterSpacing: -1.5,
+    letterSpacing: -0.8,
+    color: colors.onBackground,
+  },
+  billSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
+    marginTop: 4,
+  },
+  billHeaderRight: {
+    alignItems: 'flex-end',
+  },
+  billTotal: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: colors.secondary,
   },
+  billTotalLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 2,
+    color: colors.outline,
+    marginTop: 2,
+  },
 
-  payPrimary: {
+  // Host share callout
+  hostShareCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    height: 56,
-    borderRadius: radii.full,
-    marginBottom: 12,
-  },
-  payPrimaryText: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.onSecondary,
-  },
-  payHint: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    color: colors.outlineVariant,
-    textAlign: 'center',
-    marginBottom: 28,
-    lineHeight: 18,
-  },
-
-  detailsGrid: {
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 24,
-  },
-  detailCard: {
+    gap: 12,
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: radii.xl,
-    padding: 20,
+    padding: 16,
+    marginBottom: 16,
   },
-  detailIcon: {
-    marginBottom: 10,
+  hostShareInfo: {
+    flex: 1,
   },
-  detailLabel: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2,
-    color: colors.onSurfaceVariant,
-    marginBottom: 8,
-  },
-  detailValue: {
+  hostShareLabel: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.onSurface,
-    lineHeight: 17,
   },
-  participantRow: {
+  hostShareSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+
+  // Progress card
+  progressCard: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: radii.xl,
+    padding: 24,
+    marginBottom: 28,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onSurfaceVariant,
+  },
+  progressPercent: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.onBackground,
+  },
+  progressTrack: {
+    width: '100%',
+    height: 10,
+    backgroundColor: colors.surfaceContainerHighest,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 10,
+    backgroundColor: colors.secondary,
+    borderRadius: 5,
+  },
+  progressFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  progressStat: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+  },
+  progressAmount: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.onBackground,
+  },
+  progressAmountRemaining: {
+    color: colors.error,
+  },
+  progressStatLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.outline,
+  },
+
+  // Participants section
+  participantsSection: {
+    marginBottom: 24,
+  },
+  participantsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    color: colors.onBackground,
+  },
+  nudgeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radii.full,
   },
-  participantChip: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.secondaryContainer,
+  nudgeButtonDisabled: {
+    opacity: 0.4,
+  },
+  nudgeButtonText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onSecondary,
+  },
+
+  // Participant card
+  participantCard: {
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: radii.xl,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  participantLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+  },
+  participantAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.surfaceContainerLow,
   },
-  participantChipText: {
+  participantAvatarText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.onSurfaceVariant,
+  },
+  participantName: {
     fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.onBackground,
+  },
+  participantSubtext: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
-    color: colors.secondary,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
   },
-  participantOverflow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: colors.surfaceContainerLow,
-    backgroundColor: colors.surfaceContainerHighest,
+  participantRight: {
+    alignItems: 'flex-end',
+  },
+  participantAmount: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.onBackground,
+  },
+  statusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    marginTop: 4,
   },
-  participantOverflowText: {
+  statusText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 1,
+  },
+
+  // Cash section
+  cashSection: {
+    backgroundColor: colors.surfaceContainerHigh,
+    borderRadius: radii.xl,
+    padding: 24,
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.secondary,
+  },
+  cashTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.onBackground,
+    marginBottom: 8,
+  },
+  cashSubtext: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
     color: colors.onSurfaceVariant,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  markPaidButton: {
+    width: '100%',
+    paddingVertical: 14,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: radii.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markPaidButtonText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.secondary,
   },
 });

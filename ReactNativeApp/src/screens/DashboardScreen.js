@@ -101,7 +101,7 @@ function compactDisplayName(raw) {
   return raw;
 }
 
-const DRAFT_BILL_TITLE = 'Splitter Bill';
+const DRAFT_BILL_TITLE = 'Settld Bill';
 
 const ACTIVITY_TYPE_META = {
   bill_created: { icon: 'receipt-long', positive: true },

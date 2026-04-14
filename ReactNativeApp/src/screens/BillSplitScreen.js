@@ -10,12 +10,14 @@ import {
   Alert,
   TextInput,
   Share,
+  Modal,
+  Clipboard,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows } from '../theme';
-import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, members as membersApi } from '../services/api';
+import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, members as membersApi, paymentMethods as paymentMethodsApi } from '../services/api';
 
 function formatCurrency(value) {
   const num = typeof value === 'string' ? parseFloat(value) : (value ?? 0);
@@ -66,9 +68,11 @@ function TopAppBar({ insets, onBack, title, onShare }) {
           )}
           <Text style={styles.appTitle} numberOfLines={1}>{title || 'Split Bill'}</Text>
         </View>
-        <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={onShare}>
-          <MaterialIcons name="person-add" size={24} color={colors.secondary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={onShare}>
+            <MaterialIcons name="person-add" size={24} color={colors.secondary} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -137,6 +141,8 @@ function BillItemCard({
   members,
   assignedMemberIds,
   onToggleMember,
+  splitCount,
+  onSetSplitCount,
   isEditingItems,
   quantity,
   name,
@@ -150,7 +156,8 @@ function BillItemCard({
   const isUnassigned = assignedMemberIds.length === 0;
   const isZeroQuantity = isEditingItems && quantity === 0;
   const totalPrice = parsePriceValue(price ?? item.total_price);
-  const unitPrice = quantity > 0 ? totalPrice / quantity : totalPrice;
+  const isShared = splitCount > 1;
+  const perPersonPrice = isShared ? totalPrice / splitCount : totalPrice;
 
   return (
     <View
@@ -177,9 +184,12 @@ function BillItemCard({
             <Text style={styles.itemPriceUnassigned}>
               Unassigned • {formatCurrency(totalPrice)}
             </Text>
+          ) : isShared ? (
+            <Text style={styles.itemPrice}>
+              {formatCurrency(totalPrice)} · {formatCurrency(perPersonPrice)} each
+            </Text>
           ) : (
             <Text style={styles.itemPrice}>
-              {quantity > 1 ? `${quantity} × ${formatCurrency(unitPrice)} = ` : ''}
               {formatCurrency(totalPrice)}
             </Text>
           )}
@@ -196,7 +206,7 @@ function BillItemCard({
           </View>
         ) : (
           <View style={styles.assignedBadge}>
-            <Text style={styles.assignedBadgeText}>{quantity}</Text>
+            <MaterialIcons name="person" size={16} color={colors.onSurfaceVariant} />
           </View>
         )}
       </View>
@@ -211,16 +221,57 @@ function BillItemCard({
       )}
 
       <View style={[styles.itemCardFooter, isEditingItems && styles.itemCardFooterEditing]}>
-        <View style={styles.chipRow}>
-          {members.map((m) => (
-            <MemberChip
-              key={m.id}
-              member={m}
-              active={assignedMemberIds.includes(m.id)}
-              onPress={() => onToggleMember(item.id, m.id)}
-            />
-          ))}
-        </View>
+        {!isEditingItems && (
+          <>
+            <View style={styles.chipRowHorizontal}>
+              {members.map((m) => (
+                <MemberChip
+                  key={m.id}
+                  member={m}
+                  active={assignedMemberIds.includes(m.id)}
+                  onPress={() => onToggleMember(item.id, m.id)}
+                />
+              ))}
+            </View>
+
+            <View style={styles.sharedRow}>
+              <TouchableOpacity
+                onPress={() => onSetSplitCount(splitCount <= 1 ? 2 : 1)}
+                activeOpacity={0.7}
+                style={[styles.sharedToggle, isShared && styles.sharedToggleActive]}
+              >
+                <MaterialIcons
+                  name="group"
+                  size={14}
+                  color={isShared ? colors.onSecondary : colors.onSurfaceVariant}
+                />
+                <Text style={[styles.sharedToggleText, isShared && styles.sharedToggleTextActive]}>
+                  Shared?
+                </Text>
+              </TouchableOpacity>
+
+              {isShared && (
+                <View style={styles.splitStepper}>
+                  <TouchableOpacity
+                    onPress={() => onSetSplitCount(Math.max(2, splitCount - 1))}
+                    activeOpacity={0.6}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={[styles.splitStepperBtn, splitCount <= 2 && styles.splitStepperBtnDisabled]}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.splitStepperCount}>{splitCount}</Text>
+                  <TouchableOpacity
+                    onPress={() => onSetSplitCount(splitCount + 1)}
+                    activeOpacity={0.6}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Text style={styles.splitStepperBtn}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </>
+        )}
 
         {isEditingItems && (
           <View style={styles.priceEditorWrap}>
@@ -243,18 +294,30 @@ function BillItemCard({
   );
 }
 
-function MembersSummary({ members, items, assignmentMap, itemPrices }) {
+function MembersSummary({ members, items, assignmentMap, itemPrices, splitCounts, bill }) {
+  const billTotal = parsePriceValue(bill?.total ?? 0);
+  const billSubtotal = items.reduce((s, i) => s + parsePriceValue(itemPrices[i.id] ?? i.total_price), 0);
+  const tipAndTax = Math.max(0, billTotal - billSubtotal);
+
   const memberTotals = members.map((m) => {
-    let total = 0;
+    let subtotal = 0;
     let itemCount = 0;
     items.forEach((item) => {
       const assignees = assignmentMap[item.id] || [];
       if (assignees.includes(m.id)) {
-        total += parsePriceValue(itemPrices[item.id] ?? item.total_price) / assignees.length;
+        const itemPrice = parsePriceValue(itemPrices[item.id] ?? item.total_price);
+        const sc = splitCounts[item.id] || 1;
+        if (sc > 1) {
+          subtotal += itemPrice / sc;
+        } else {
+          subtotal += itemPrice;
+        }
         itemCount++;
       }
     });
-    return { ...m, total, itemCount };
+    const tipShare = billSubtotal > 0 ? tipAndTax * (subtotal / billSubtotal) : 0;
+    const total = roundMoney(subtotal + tipShare);
+    return { ...m, subtotal: roundMoney(subtotal), tipShare: roundMoney(tipShare), total, itemCount };
   });
 
   return (
@@ -270,6 +333,7 @@ function MembersSummary({ members, items, assignmentMap, itemPrices }) {
               <Text style={styles.memberName}>{m.nickname}</Text>
               <Text style={styles.memberItemCount}>
                 {m.itemCount} {m.itemCount === 1 ? 'Item' : 'Items'}
+                {m.tipShare > 0 ? ` · incl. ${formatCurrency(m.tipShare)} tip/tax` : ''}
               </Text>
             </View>
           </View>
@@ -303,14 +367,9 @@ function EmptyItems({ onScanReceipt, billId }) {
   );
 }
 
-function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantities, onSend }) {
-  const qtyFor = (i) => itemQuantities[i.id] ?? i.quantity ?? 0;
+function BottomActions({ insets, items, assignmentMap, itemPrices, onSend, isHost }) {
   const totalLines = items.length;
   const assignedLines = items.filter((i) => (assignmentMap[i.id] || []).length > 0).length;
-  const totalUnits = items.reduce((sum, i) => sum + qtyFor(i), 0);
-  const assignedUnits = items
-    .filter((i) => (assignmentMap[i.id] || []).length > 0)
-    .reduce((sum, i) => sum + qtyFor(i), 0);
 
   const subtotal = items.reduce((sum, i) => {
     if ((assignmentMap[i.id] || []).length > 0) {
@@ -319,15 +378,12 @@ function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantitie
     return sum;
   }, 0);
 
-  const assignmentLabel =
-    totalUnits !== totalLines
-      ? `${assignedLines} of ${totalLines} lines · ${assignedUnits} of ${totalUnits} units assigned`
-      : `${assignedLines} of ${totalLines} lines assigned`;
-
   return (
     <View style={[styles.bottomActions, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
       <View style={styles.subtotalRow}>
-        <Text style={styles.assignedCount}>{assignmentLabel}</Text>
+        <Text style={styles.assignedCount}>
+          {assignedLines} of {totalLines} items assigned
+        </Text>
         <Text style={styles.subtotalText}>Subtotal: {formatCurrency(subtotal)}</Text>
       </View>
       <TouchableOpacity activeOpacity={0.85} onPress={onSend}>
@@ -337,7 +393,9 @@ function BottomActions({ insets, items, assignmentMap, itemPrices, itemQuantitie
           end={{ x: 1, y: 1 }}
           style={[styles.sendButton, shadows.sendButton]}
         >
-          <Text style={styles.sendButtonText}>Pay your Portion</Text>
+          <Text style={styles.sendButtonText}>
+            {isHost ? 'Next' : 'Submit My Items'}
+          </Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -354,6 +412,8 @@ export default function BillSplitScreen({ navigation, route }) {
   const [members, setMembers] = useState([]);
   const [items, setItems] = useState([]);
   const [assignmentMap, setAssignmentMap] = useState({});
+  // splitCounts: itemId -> number (how many people split this item, 1 = not shared)
+  const [splitCounts, setSplitCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingItemEdits, setSavingItemEdits] = useState(false);
@@ -441,6 +501,10 @@ export default function BillSplitScreen({ navigation, route }) {
         [itemId]: has ? current.filter((id) => id !== memberId) : [...current, memberId],
       };
     });
+  };
+
+  const handleSetSplitCount = (itemId, count) => {
+    setSplitCounts((prev) => ({ ...prev, [itemId]: count }));
   };
 
   const adjustItemQuantity = useCallback(
@@ -646,8 +710,8 @@ export default function BillSplitScreen({ navigation, route }) {
       }
 
       // Create a deep link that opens the app and joins the bill
-      const inviteLink = `https://app.spltr.com/join/${token}`;
-      const appDeepLink = `spltr://join/${token}`;
+      const inviteLink = `https://app.settld.live/join/${token}`;
+      const appDeepLink = `settld://join/${token}`;
 
       // Show the code and link in an alert
       Alert.alert(
@@ -683,12 +747,15 @@ export default function BillSplitScreen({ navigation, route }) {
     const assignmentsList = [];
     Object.entries(assignmentMap).forEach(([itemId, memberIds]) => {
       if (!visibleItemIds.has(itemId)) return;
+      const sc = splitCounts[itemId] || 1;
+
       memberIds.forEach((memberId) => {
         assignmentsList.push({
           receipt_item_id: itemId,
           bill_member_id: memberId,
           share_type: 'equal',
           share_value: 0,
+          split_count: sc,
         });
       });
     });
@@ -700,6 +767,33 @@ export default function BillSplitScreen({ navigation, route }) {
 
     setSaving(true);
     try {
+      // Check if host has a payment method on file
+      const pmRes = await paymentMethodsApi.list();
+      const paymentMethods = pmRes.data ?? [];
+      
+      if (paymentMethods.length === 0) {
+        setSaving(false);
+        Alert.alert(
+          'Payment Method Required',
+          'You need to add a payment method to receive payments from your group.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Add Card',
+              onPress: () => {
+                navigation.navigate('AddPaymentMethod', {
+                  onSuccess: () => {
+                    // Retry sending after adding payment method
+                    handleSend();
+                  },
+                });
+              },
+            },
+          ],
+        );
+        return;
+      }
+
       // Check if assignments already exist on the server
       const existingRes = await assignmentsApi.list(billId);
       const existingAssignments = existingRes.data ?? [];
@@ -819,6 +913,8 @@ export default function BillSplitScreen({ navigation, route }) {
                   members={members}
                   assignedMemberIds={assignmentMap[item.id] || []}
                   onToggleMember={handleToggleMember}
+                  splitCount={splitCounts[item.id] || 1}
+                  onSetSplitCount={(count) => handleSetSplitCount(item.id, count)}
                   isEditingItems={isEditingItems}
                   quantity={itemQuantities[item.id] ?? item.quantity ?? 0}
                   name={itemNames[item.id] ?? item.name ?? ''}
@@ -838,6 +934,8 @@ export default function BillSplitScreen({ navigation, route }) {
                 items={visibleItems}
                 assignmentMap={assignmentMap}
                 itemPrices={itemPrices}
+                splitCounts={splitCounts}
+                bill={bill}
               />
             )}
           </>
@@ -850,8 +948,8 @@ export default function BillSplitScreen({ navigation, route }) {
           items={visibleItems}
           assignmentMap={assignmentMap}
           itemPrices={itemPrices}
-          itemQuantities={itemQuantities}
           onSend={handleSend}
+          isHost={true}
         />
       )}
     </View>
@@ -904,6 +1002,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   backButton: {
     padding: 4,
@@ -1078,9 +1181,9 @@ const styles = StyleSheet.create({
   },
   itemCardUnassigned: {
     backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.outlineVariant,
-    opacity: 0.95,
+    borderStyle: 'dashed',
   },
   itemCardZeroQuantity: {
     backgroundColor: colors.errorContainer,
@@ -1149,15 +1252,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.secondaryContainer,
+    backgroundColor: colors.surfaceContainerHighest,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  assignedBadgeText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.secondary,
   },
   quantityEditor: {
     flexDirection: 'row',
@@ -1188,7 +1285,7 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
 
-  chipRow: {
+  chipRowHorizontal: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
@@ -1216,6 +1313,71 @@ const styles = StyleSheet.create({
   },
   chipTextActive: { color: colors.onSecondary },
   chipTextInactive: { color: colors.onSurfaceVariant },
+
+  sharedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  sharedToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    backgroundColor: colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+  },
+  sharedToggleActive: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
+  },
+  sharedToggleText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.onSurfaceVariant,
+  },
+  sharedToggleTextActive: {
+    color: colors.onSecondary,
+  },
+  sharedCount: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.secondary,
+  },
+  splitStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 8,
+  },
+  splitStepperBtn: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+    paddingHorizontal: 4,
+  },
+  splitStepperBtnDisabled: {
+    color: colors.outlineVariant,
+  },
+  splitStepperCount: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.onSurface,
+    minWidth: 20,
+    textAlign: 'center',
+  },
   priceEditorWrap: {
     minWidth: 120,
     alignItems: 'flex-end',
@@ -1353,5 +1515,193 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: colors.onSecondary,
+  },
+
+  // Virtual Card Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outlineVariant,
+    paddingTop: 60, // Account for status bar
+  },
+  modalTitle: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.onSurface,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  loadingText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    color: colors.onSurfaceVariant,
+  },
+  errorContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 16,
+    color: colors.error,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: colors.secondary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: radii.full,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSecondary,
+  },
+  cardVisual: {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    backgroundColor: colors.secondary,
+    borderRadius: 20,
+    padding: 30,
+    marginVertical: 24,
+    ...shadows.settleButton,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
+    letterSpacing: 1,
+  },
+  cardNumber: {
+    marginBottom: 24,
+  },
+  cardNumberLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 8,
+  },
+  cardNumberContainer: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    padding: 16,
+  },
+  cardNumberText: {
+    fontFamily: 'Courier New',
+    fontSize: 20,
+    fontWeight: '600',
+    color: 'white',
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  cardNumberNote: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  cardDetails: {
+    flexDirection: 'row',
+    gap: 24,
+  },
+  cardDetailItem: {
+    flex: 1,
+  },
+  cardDetailLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 4,
+  },
+  cardDetailValue: {
+    fontFamily: 'Courier New',
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
+    letterSpacing: 1,
+  },
+  cardInfo: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: 16,
+    padding: 20,
+    gap: 16,
+    marginBottom: 24,
+  },
+  cardInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cardInfoText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.onSurface,
+    flex: 1,
+  },
+  cardActions: {
+    marginBottom: 24,
+  },
+  deactivateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.error,
+    borderRadius: radii.large,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  deactivateButtonText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.onError,
+  },
+  cardNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.secondaryContainer,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  cardNoteText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: colors.onSecondaryContainer,
+    flex: 1,
+    lineHeight: 18,
   },
 });

@@ -13,8 +13,8 @@ const DEV_BASE =
       ? 'http://10.195.57.116:8000'  // iOS device/Expo - use your Mac's IP
       : 'http://localhost:8000';  // iOS simulator
 
-/** Dev/prod API origin — exported for debug logs (LoginScreen, etc.). */
-export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app';
+// export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.settld.live';
+export const BASE_URL = 'https://api.settld.live';
 
 function logAxiosFailure(error) {
   if (!__DEV__) return;
@@ -254,6 +254,22 @@ export const payments = {
   listForBill: (billId) => client.get(`/bills/${billId}/payments`),
 };
 
+// ─── Payment Methods ─────────────────────────────────────────────────────────
+export const paymentMethods = {
+  list: () => client.get('/payment-methods'),
+
+  createSetupIntent: () => client.post('/payment-methods/setup-intent'),
+
+  attachPaymentMethod: (paymentMethodId) =>
+    client.post('/payment-methods/attach', { payment_method_id: paymentMethodId }),
+
+  setDefault: (paymentMethodId) =>
+    client.post('/payment-methods/set-default', { payment_method_id: paymentMethodId }),
+
+  delete: (paymentMethodId) =>
+    client.delete(`/payment-methods/${paymentMethodId}`),
+};
+
 // ─── Invites ─────────────────────────────────────────────────────────────────
 export const invites = {
   share: (billId) => client.post(`/bills/${billId}/share`),
@@ -284,6 +300,15 @@ export const notifications = {
 
   markRead: (notificationId) =>
     client.patch(`/notifications/${notificationId}/read`),
+};
+
+// ─── Virtual Cards ───────────────────────────────────────────────────────────
+export const virtualCards = {
+  get: (billId) => client.get(`/bills/${billId}/virtual-card`),
+  
+  getEphemeralKey: (billId) => client.post(`/bills/${billId}/virtual-card/ephemeral-key`),
+  
+  deactivate: (billId) => client.post(`/bills/${billId}/virtual-card/deactivate`),
 };
 
 // ─── Health ──────────────────────────────────────────────────────────────────
