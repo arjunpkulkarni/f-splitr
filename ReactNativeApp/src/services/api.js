@@ -1,11 +1,10 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import { getToken, removeToken } from './authStorage';
+import { supabase } from './supabase';
 
 const DEV_BASE =
   Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
 
-/** Dev/prod API origin — exported for debug logs (LoginScreen, etc.). */
 export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.spltr.app';
 
 function logAxiosFailure(error) {
@@ -21,9 +20,6 @@ function logAxiosFailure(error) {
   if (Platform.OS !== 'android' && base.includes('localhost')) {
     hints.push('On a physical device, localhost is the phone — use your Mac/PC LAN IP as BASE_URL.');
   }
-  if (Platform.OS === 'android' && base.includes('10.0.2.2')) {
-    hints.push('Android emulator: 10.0.2.2 maps to host localhost.');
-  }
   const body = error.response?.data;
   console.warn('[SPLTR API] request failed', {
     message: error.message,
@@ -33,9 +29,7 @@ function logAxiosFailure(error) {
     status: error.response?.status,
     serverError: body?.error,
     hints:
-      error.response?.status && error.response.status < 500
-        ? [] // response reached the API; localhost hints are usually irrelevant
-        : hints,
+      error.response?.status && error.response.status < 500 ? [] : hints,
   });
 }
 
@@ -46,9 +40,9 @@ const client = axios.create({
 });
 
 client.interceptors.request.use(async (config) => {
-  const token = await getToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
   }
   return config;
 });
@@ -58,7 +52,7 @@ client.interceptors.response.use(
   async (error) => {
     logAxiosFailure(error);
     if (error.response?.status === 401) {
-      await removeToken();
+      await supabase.auth.signOut();
     }
     const data = error.response?.data;
     if (data?.error?.code) {
@@ -88,42 +82,15 @@ export function unwrap(body) {
   return body.data;
 }
 
-/** Phone OTP + email auth + profile (single object for imports). */
 export const authApi = {
-  /** @param {'signup'|'login'|null|undefined} intent — null/undefined keeps legacy API behavior */
-  sendOtp: (phone, intent) =>
-    client.post('/auth/send-otp', {
-      phone,
-      ...(intent ? { intent } : {}),
-    }),
-
-  verifyOtp: (phone, code, firstName = '', intent) =>
-    client.post('/auth/verify-otp', {
-      phone,
-      code,
-      first_name: firstName ?? '',
-      ...(intent ? { intent } : {}),
-    }),
-
-  signup: (email, password, fullName) =>
-    client.post('/auth/signup', { email, password, full_name: fullName }),
-
-  login: (email, password) =>
-    client.post('/auth/login', { email, password }),
-
-  appleSignIn: (identityToken, authorizationCode, userInfo) =>
-    client.post('/auth/apple', {
-      identity_token: identityToken,
-      authorization_code: authorizationCode,
-      user_info: userInfo,
-    }),
-
   getMe: () => client.get('/auth/me'),
+
+  createProfile: (fullName) =>
+    client.post('/auth/create-profile', { full_name: fullName }),
 
   logout: () => client.post('/auth/logout'),
 };
 
-/** Alias for older imports: `import { auth } from '../services/api'` */
 export const auth = authApi;
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

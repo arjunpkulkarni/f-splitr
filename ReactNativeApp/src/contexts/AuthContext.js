@@ -1,73 +1,138 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi, unwrap } from '../services/api';
-import { getToken, setToken, removeToken } from '../services/authStorage';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
+import { supabase } from '../services/supabase';
+import { authApi, unwrap, ApiError } from '../services/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const [pendingOnboardingName, setPendingOnboardingName] = useState('');
+  const refreshProfileRef = useRef(async () => ({ hasProfile: false }));
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const body = await authApi.getMe();
+      const data = unwrap(body);
+      setProfile(data);
+      setNeedsOnboarding(false);
+      return { hasProfile: true };
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'PROFILE_NOT_FOUND') {
+        setProfile(null);
+        setNeedsOnboarding(true);
+        return { hasProfile: false };
+      }
+      throw e;
+    }
+  }, []);
+
+  refreshProfileRef.current = refreshProfile;
 
   useEffect(() => {
-    (async () => {
-      try {
-        const token = await getToken();
-        if (token) {
-          const body = await authApi.getMe();
-          const data = unwrap(body);
-          setUser(data);
-        }
-      } catch {
-        await removeToken();
-      } finally {
-        setIsLoading(false);
+    let cancelled = false;
+
+    const run = async (s) => {
+      if (!s) {
+        setProfile(null);
+        setNeedsOnboarding(false);
+        setPendingOnboardingName('');
+        return;
       }
-    })();
+      try {
+        await refreshProfileRef.current();
+      } catch {
+        if (!cancelled) {
+          await supabase.auth.signOut();
+        }
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (cancelled) return;
+      setSession(s);
+      run(s).finally(() => {
+        if (!cancelled) setBootstrapped(true);
+      });
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (cancelled) return;
+      setSession(s);
+      if (s) {
+        run(s).catch(() => {});
+      } else {
+        setProfile(null);
+        setNeedsOnboarding(false);
+        setPendingOnboardingName('');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const completePhoneAuth = useCallback(async (phone, code, firstName, intent) => {
-    const body = await authApi.verifyOtp(phone, code, firstName, intent);
-    const data = unwrap(body);
-    const token = data.access_token ?? data.token;
-    if (!token) throw new Error('No token returned');
-    await setToken(token);
-    setUser(data.user);
-    return data.user;
+  const sendOtp = useCallback(async (phone) => {
+    const { error } = await supabase.auth.signInWithOtp({ phone });
+    if (error) throw error;
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    const body = await authApi.login(email, password);
-    const data = unwrap(body);
-    const token = data.access_token;
-    if (!token) throw new Error('No token returned');
-    await setToken(token);
-    setUser(data.user);
-    return data.user;
+  const verifyOtp = useCallback(async (phone, code) => {
+    const { error } = await supabase.auth.verifyOtp({
+      phone,
+      token: code,
+      type: 'sms',
+    });
+    if (error) throw error;
   }, []);
 
-  const signup = useCallback(async (email, password, fullName) => {
-    const body = await authApi.signup(email, password, fullName);
+  const createProfile = useCallback(async (fullName) => {
+    const body = await authApi.createProfile(fullName);
     const data = unwrap(body);
-    const token = data.access_token;
-    if (!token) throw new Error('No token returned');
-    await setToken(token);
-    setUser(data.user);
-    return data.user;
+    setProfile(data);
+    setNeedsOnboarding(false);
+    setPendingOnboardingName('');
+    return data;
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      await authApi.logout();
-    } catch {
-      // ignore — clear local state regardless
-    }
-    await removeToken();
-    setUser(null);
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+    setNeedsOnboarding(false);
+    setPendingOnboardingName('');
   }, []);
+
+  const user = profile;
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, completePhoneAuth, login, signup, logout }}
+      value={{
+        session,
+        user,
+        needsOnboarding,
+        bootstrapped,
+        sendOtp,
+        verifyOtp,
+        createProfile,
+        logout,
+        refreshProfile,
+        pendingOnboardingName,
+        setPendingOnboardingName,
+      }}
     >
       {children}
     </AuthContext.Provider>

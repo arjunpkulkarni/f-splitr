@@ -21,10 +21,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import LandingScreen from './src/screens/LandingScreen';
 import PhoneAuthScreen from './src/screens/PhoneAuthScreen';
-import VerifyOTPScreen from './src/screens/VerifyOTPScreen';
-
 import PhoneLoginScreen from './src/screens/PhoneLoginScreen';
-import SignupScreen from './src/screens/SignupScreen';
+import VerifyOTPScreen from './src/screens/VerifyOTPScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
+
 import BillSplitScreen from './src/screens/BillSplitScreen';
 import ReviewPaymentScreen from './src/screens/ReviewPaymentScreen';
 import ActivityDetailScreen from './src/screens/ActivityDetailScreen';
@@ -35,6 +35,15 @@ import MainTabNavigator from './src/navigation/MainTabNavigator';
 
 const AuthStack = createNativeStackNavigator();
 const MainStack = createNativeStackNavigator();
+const OnboardingStack = createNativeStackNavigator();
+
+function OnboardingNavigator() {
+  return (
+    <OnboardingStack.Navigator screenOptions={{ headerShown: false }}>
+      <OnboardingStack.Screen name="OnboardingMain" component={OnboardingScreen} />
+    </OnboardingStack.Navigator>
+  );
+}
 
 function AuthNavigator() {
   return (
@@ -46,11 +55,6 @@ function AuthNavigator() {
       <AuthStack.Screen
         name="Login"
         component={PhoneLoginScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <AuthStack.Screen
-        name="Signup"
-        component={SignupScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <AuthStack.Screen
@@ -106,9 +110,9 @@ function MainNavigator() {
 }
 
 function RootNavigator() {
-  const { user, isLoading } = useAuth();
+  const { session, user, needsOnboarding, bootstrapped } = useAuth();
 
-  if (isLoading) {
+  if (!bootstrapped) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#006c5c" />
@@ -116,7 +120,23 @@ function RootNavigator() {
     );
   }
 
-  return user ? <MainNavigator /> : <AuthNavigator />;
+  if (!session) {
+    return <AuthNavigator />;
+  }
+
+  if (needsOnboarding) {
+    return <OnboardingNavigator />;
+  }
+
+  if (user) {
+    return <MainNavigator />;
+  }
+
+  return (
+    <View style={styles.loading}>
+      <ActivityIndicator size="large" color="#006c5c" />
+    </View>
+  );
 }
 
 export default function App() {
@@ -155,9 +175,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  gestureRoot: {
-    flex: 1,
-  },
+  gestureRoot: { flex: 1 },
   loading: {
     flex: 1,
     alignItems: 'center',

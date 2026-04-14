@@ -1,15 +1,13 @@
-import * as SecureStore from 'expo-secure-store';
-
-const TOKEN_KEY = 'spltr_access_token';
+/**
+ * Legacy token storage — DEPRECATED.
+ * Supabase manages session tokens via AsyncStorage automatically.
+ * This file is kept so any lingering imports don't crash at startup.
+ */
 
 export async function getToken() {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  return null;
 }
 
-export async function setToken(token) {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-}
+export async function setToken() {}
 
-export async function removeToken() {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
-}
+export async function removeToken() {}

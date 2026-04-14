@@ -14,33 +14,17 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing } from '../theme';
-import { authApi, unwrap, ApiError } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../services/supabase';
 
 const COOLDOWN_SEC = 45;
 
-function mapVerifyError(code, fallback) {
-  const map = {
-    INVALID_OTP: 'That code is incorrect. Try again.',
-    OTP_EXPIRED: 'This code expired. Request a new one.',
-    INVALID_PHONE: 'Invalid phone number.',
-    RATE_LIMIT_EXCEEDED: 'Too many attempts. Wait a moment and try again.',
-    PROVIDER_ERROR: 'Verification failed. Try again.',
-    NETWORK_ERROR: 'Connection problem. Check your network.',
-    PHONE_ALREADY_REGISTERED: 'This number already has an account. Use Log In.',
-    PHONE_NOT_REGISTERED: 'No account for this number yet. Use Get Started to sign up.',
-    NAME_REQUIRED: 'Enter your first name on the sign-up screen.',
-  };
-  return map[code] ?? fallback ?? 'Verification failed.';
-}
-
 export default function VerifyOTPScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { completePhoneAuth } = useAuth();
+  const { verifyOtp, sendOtp, refreshProfile, setPendingOnboardingName } = useAuth();
   const phone = route.params?.phone ?? '';
   const firstName = (route.params?.firstName ?? '').trim();
   const mode = route.params?.mode === 'login' ? 'login' : 'signup';
-  const [otpDevMode, setOtpDevMode] = useState(Boolean(route.params?.otpDevMode));
   const inputRef = useRef(null);
 
   const [code, setCode] = useState('');
@@ -61,35 +45,20 @@ export default function VerifyOTPScreen({ navigation, route }) {
     return () => clearInterval(id);
   }, [cooldown]);
 
-  const otpIntent = mode === 'login' ? 'login' : 'signup';
-
   const onVerify = async () => {
     if (code.length !== 6 || loading || !phone) return;
-    if (mode === 'signup' && !firstName.trim()) return;
+    if (mode === 'signup' && !firstName) return;
     setLoading(true);
     setError(null);
     try {
-      await completePhoneAuth(
-        phone,
-        code,
-        mode === 'login' ? '' : firstName,
-        otpIntent,
-      );
+      await verifyOtp(phone, code);
+      await supabase.auth.getSession();
+      const { hasProfile } = await refreshProfile();
+      if (!hasProfile) {
+        setPendingOnboardingName(mode === 'signup' ? firstName : '');
+      }
     } catch (err) {
-      const c = err instanceof ApiError ? err.code : 'ERROR';
-      const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
-      if (c === 'PHONE_ALREADY_REGISTERED') {
-        navigation.replace('Login', {
-          prefillE164: phone,
-          redirectReason: 'existing_account',
-        });
-        return;
-      }
-      if (c === 'PHONE_NOT_REGISTERED') {
-        navigation.replace('PhoneAuth', { prefillE164: phone });
-        return;
-      }
-      setError(mapVerifyError(c, msg));
+      setError(err?.message ?? 'Verification failed. Try again.');
     } finally {
       setLoading(false);
     }
@@ -99,14 +68,10 @@ export default function VerifyOTPScreen({ navigation, route }) {
     if (cooldown > 0 || !phone || loading) return;
     setError(null);
     try {
-      const body = await authApi.sendOtp(phone, otpIntent);
-      const data = unwrap(body);
-      setOtpDevMode(Boolean(data?.otp_dev_mode));
+      await sendOtp(phone);
       setCooldown(COOLDOWN_SEC);
     } catch (err) {
-      const c = err instanceof ApiError ? err.code : 'ERROR';
-      const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
-      setError(mapVerifyError(c, msg));
+      setError(err?.message ?? 'Could not resend code.');
     }
   };
 
@@ -117,7 +82,7 @@ export default function VerifyOTPScreen({ navigation, route }) {
   };
 
   const canVerify =
-    code.length === 6 && !loading && (mode === 'login' || Boolean(firstName.trim()));
+    code.length === 6 && !loading && (mode === 'login' || Boolean(firstName));
 
   const masked = useCallback(() => {
     if (!phone || phone.length < 4) return phone;
@@ -156,22 +121,6 @@ export default function VerifyOTPScreen({ navigation, route }) {
           We sent a 6-digit code to{' '}
           <Text style={styles.phoneEm}>{masked()}</Text>
         </Text>
-
-        {mode === 'signup' && !firstName ? (
-          <Text style={styles.nameMissing}>
-            Go back and enter your first name to finish signing up.
-          </Text>
-        ) : null}
-
-        {otpDevMode ? (
-          <View style={styles.devHint}>
-            <MaterialIcons name="terminal" size={18} color={colors.onSecondaryContainer} />
-            <Text style={styles.devHintText}>
-              Dev OTP: no SMS is sent. Use the 6-digit code from the API terminal (log line
-              starts with "OTP dev mode").
-            </Text>
-          </View>
-        ) : null}
 
         <TextInput
           ref={inputRef}
@@ -226,123 +175,23 @@ export default function VerifyOTPScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing['2xl'],
-    flexGrow: 1,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  backBtn: {
-    width: 40,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  brandTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-  headerDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.surfaceContainerHighest,
-    opacity: 0.6,
-    marginBottom: spacing['3xl'],
-  },
-  title: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 26,
-    color: colors.onSurface,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-    color: colors.onSurfaceVariant,
-    lineHeight: 22,
-    marginBottom: spacing.md,
-  },
-  devHint: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.secondaryContainer,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    marginBottom: spacing['2xl'],
-  },
-  devHintText: {
-    flex: 1,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.onSecondaryContainer,
-  },
-  phoneEm: {
-    fontFamily: 'Inter_600SemiBold',
-    color: colors.onSurface,
-  },
-  nameMissing: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    color: colors.error,
-    marginBottom: spacing.md,
-    lineHeight: 20,
-  },
-  otpInput: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 36,
-    letterSpacing: 10,
-    color: colors.onSurface,
-    paddingVertical: spacing.lg,
-    marginBottom: spacing.lg,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.surfaceContainerHigh,
-  },
-  errorText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: colors.error,
-    marginBottom: spacing.md,
-  },
-  ctaTouchable: {
-    marginBottom: spacing.lg,
-  },
-  ctaDisabled: {
-    opacity: 0.45,
-  },
-  ctaGradient: {
-    height: 56,
-    borderRadius: radii.full,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  ctaText: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
-    color: colors.onSecondary,
-  },
-  resendRow: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-  },
-  resendText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-    color: colors.secondary,
-  },
-  resendMuted: {
-    color: colors.onSurfaceVariant,
-  },
+  root: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { paddingHorizontal: spacing['2xl'], flexGrow: 1 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  backBtn: { width: 40 },
+  headerSpacer: { width: 40 },
+  brandTitle: { fontFamily: 'Manrope_700Bold', fontSize: 20, fontWeight: '700', color: colors.onSurface },
+  headerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.surfaceContainerHighest, opacity: 0.6, marginBottom: spacing['3xl'] },
+  title: { fontFamily: 'Manrope_800ExtraBold', fontSize: 26, color: colors.onSurface, marginBottom: spacing.sm },
+  subtitle: { fontFamily: 'Inter_500Medium', fontSize: 15, color: colors.onSurfaceVariant, lineHeight: 22, marginBottom: spacing.md },
+  phoneEm: { fontFamily: 'Inter_600SemiBold', color: colors.onSurface },
+  otpInput: { fontFamily: 'Manrope_800ExtraBold', fontSize: 36, letterSpacing: 10, color: colors.onSurface, paddingVertical: spacing.lg, marginBottom: spacing.lg, borderBottomWidth: 2, borderBottomColor: colors.surfaceContainerHigh },
+  errorText: { fontFamily: 'Inter_500Medium', fontSize: 13, color: colors.error, marginBottom: spacing.md },
+  ctaTouchable: { marginBottom: spacing.lg },
+  ctaDisabled: { opacity: 0.45 },
+  ctaGradient: { height: 56, borderRadius: radii.full, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  ctaText: { fontFamily: 'Manrope_700Bold', fontSize: 18, color: colors.onSecondary },
+  resendRow: { alignItems: 'center', paddingVertical: spacing.md },
+  resendText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.secondary },
+  resendMuted: { color: colors.onSurfaceVariant },
 });

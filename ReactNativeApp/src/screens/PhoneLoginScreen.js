@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import parsePhoneNumberFromString from 'libphonenumber-js';
 import { colors, radii, shadows, spacing } from '../theme';
-import { authApi, unwrap, ApiError, BASE_URL } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const US_FLAG_URI =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDwasLfGs2yAHoAksnkA7j0KCwqkaYnz2rcbytxxarH87dCl7NlQKt-m0DiG5ggq5RGq1q-0XIPauZFtG0rEjVNJrmqP9PphqLZUEt7YAXjTFVdSDbGXSyxkKe2vSY_-yP_AjeQ_PmWesCfbDNNQJPio1u8iMYRBDbTBxJF6SeGM2JtJy51lPoIZs3fS38oIiuFJrlfldUeokU7zFE2H2gCaGOy7wwfP4hW92NjrJXZFQi-t7quMrGXW26AgQkK4PfsyHqLcGSz';
@@ -36,26 +36,9 @@ function toE164Us10(digits) {
   return p?.isValid() ? p.format('E.164') : null;
 }
 
-function maskPhoneTail(e164) {
-  if (!e164 || e164.length < 4) return '****';
-  return e164.slice(-4);
-}
-
-function mapSendOtpError(code, fallback) {
-  const map = {
-    INVALID_PHONE: 'Enter a valid US mobile number.',
-    RATE_LIMIT_EXCEEDED: 'Too many attempts. Try again in a little while.',
-    PROVIDER_ERROR: 'We could not send a code. Try again later.',
-    CONFIG_ERROR: 'SMS verification is not configured on the server.',
-    NETWORK_ERROR: 'Connection problem. Check your network and try again.',
-    PHONE_NOT_REGISTERED:
-      'No account for this number. We opened Get Started so you can sign up.',
-  };
-  return map[code] ?? fallback ?? 'Something went wrong.';
-}
-
 export default function PhoneLoginScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { sendOtp } = useAuth();
   const [national, setNational] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -71,59 +54,25 @@ export default function PhoneLoginScreen({ navigation, route }) {
   const e164 = useMemo(() => toE164Us10(national), [national]);
   const valid = Boolean(e164);
 
-  const onChangeNational = (text) => {
-    setNational(formatUsNational(text));
-    setError(null);
-  };
-
   const onContinue = useCallback(async () => {
     if (!e164 || loading || submitLock.current) return;
     submitLock.current = true;
     setError(null);
     setLoading(true);
-    if (__DEV__) {
-      console.log('[SPLTR] phone_login send_otp attempt', {
-        phone_tail: maskPhoneTail(e164),
-        baseUrl: BASE_URL,
-      });
-    }
     try {
-      const body = await authApi.sendOtp(e164, 'login');
-      const data = unwrap(body);
-      if (__DEV__) {
-        console.log('[SPLTR] phone_login send_otp ok', {
-          phone_tail: maskPhoneTail(e164),
-          otp_dev_mode: data?.otp_dev_mode,
-        });
-      }
+      await sendOtp(e164);
       navigation.navigate('VerifyOTP', {
         phone: e164,
         firstName: '',
         mode: 'login',
-        otpDevMode: Boolean(data?.otp_dev_mode),
       });
     } catch (err) {
-      const code = err instanceof ApiError ? err.code : 'ERROR';
-      const msg = err instanceof ApiError ? err.message : String(err?.message ?? err);
-      if (__DEV__) {
-        console.warn('[SPLTR] phone_login send_otp failed', {
-          code,
-          message: msg,
-          phone_tail: maskPhoneTail(e164),
-        });
-      }
-      if (code === 'PHONE_NOT_REGISTERED') {
-        navigation.replace('PhoneAuth', { prefillE164: e164 });
-        return;
-      }
-      setError(mapSendOtpError(code, msg));
+      setError(err?.message ?? 'Could not send code. Try again.');
     } finally {
       setLoading(false);
-      setTimeout(() => {
-        submitLock.current = false;
-      }, 400);
+      setTimeout(() => { submitLock.current = false; }, 400);
     }
-  }, [e164, loading, navigation]);
+  }, [e164, loading, navigation, sendOtp]);
 
   const redirectBanner =
     route.params?.redirectReason === 'existing_account'
@@ -136,14 +85,10 @@ export default function PhoneLoginScreen({ navigation, route }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <StatusBar style="dark" />
-
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          {
-            paddingTop: insets.top + 8,
-            paddingBottom: insets.bottom + spacing['2xl'],
-          },
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + spacing['2xl'] },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -188,7 +133,6 @@ export default function PhoneLoginScreen({ navigation, route }) {
               <View style={styles.countryChip}>
                 <Image source={{ uri: US_FLAG_URI }} style={styles.flag} />
                 <Text style={styles.dialCode}>+1</Text>
-                <MaterialIcons name="expand-more" size={20} color={colors.outline} />
               </View>
               <View style={styles.phoneInputWrap}>
                 <TextInput
@@ -197,7 +141,7 @@ export default function PhoneLoginScreen({ navigation, route }) {
                   placeholderTextColor={`${colors.outlineVariant}99`}
                   keyboardType="phone-pad"
                   value={national}
-                  onChangeText={onChangeNational}
+                  onChangeText={(t) => { setNational(formatUsNational(t)); setError(null); }}
                   maxLength={14}
                   editable={!loading}
                 />
@@ -246,179 +190,36 @@ export default function PhoneLoginScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing['2xl'],
-  },
-  topBar: {
-    marginBottom: spacing['3xl'],
-  },
-  topBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-  backBtn: {
-    width: 40,
-  },
-  topBarSpacer: {
-    width: 40,
-  },
-  brandTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.onSurface,
-    letterSpacing: -0.3,
-  },
-  headerDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.surfaceContainerLow,
-    opacity: 0.35,
-  },
-  main: {
-    flex: 1,
-    maxWidth: 480,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  hero: {
-    marginBottom: spacing['3xl'],
-  },
-  heroTitle: {
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 28,
-    lineHeight: 34,
-    color: colors.onSurface,
-    marginBottom: spacing.md,
-  },
-  heroAccent: {
-    color: colors.secondary,
-  },
-  heroSub: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.onSurfaceVariant,
-  },
-  redirectBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: `${colors.secondary}14`,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    marginBottom: spacing.lg,
-  },
-  redirectBannerText: {
-    flex: 1,
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.onSurface,
-  },
-  formBlock: {
-    marginBottom: spacing.lg,
-  },
-  fieldLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.onSurfaceVariant,
-    marginBottom: spacing.md,
-    marginLeft: 4,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'stretch',
-  },
-  countryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: spacing.md,
-    height: 64,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  flag: {
-    width: 24,
-    height: 16,
-    borderRadius: 2,
-  },
-  dialCode: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 16,
-    color: colors.onSurface,
-  },
-  phoneInputWrap: {
-    flex: 1,
-    height: 64,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surfaceContainerLow,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  phoneInput: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 20,
-    color: colors.onSurface,
-    padding: 0,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginTop: spacing.xl,
-    paddingHorizontal: 4,
-  },
-  infoIcon: {
-    marginTop: 2,
-  },
-  infoText: {
-    flex: 1,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.onSurfaceVariant,
-  },
-  errorText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    color: colors.error,
-    marginBottom: spacing.md,
-  },
-  actions: {
-    marginTop: 'auto',
-    paddingTop: spacing['2xl'],
-  },
-  ctaTouchable: {
-    width: '100%',
-  },
-  ctaDisabled: {
-    opacity: 0.45,
-  },
-  ctaGradient: {
-    height: 64,
-    borderRadius: radii.full,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  ctaText: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
-    color: colors.onSecondary,
-  },
+  root: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { flexGrow: 1, paddingHorizontal: spacing['2xl'] },
+  topBar: { marginBottom: spacing['3xl'] },
+  topBarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md, paddingHorizontal: spacing.sm },
+  backBtn: { width: 40 },
+  topBarSpacer: { width: 40 },
+  brandTitle: { fontFamily: 'Manrope_700Bold', fontSize: 20, fontWeight: '700', color: colors.onSurface, letterSpacing: -0.3 },
+  headerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.surfaceContainerLow, opacity: 0.35 },
+  main: { flex: 1, maxWidth: 480, alignSelf: 'center', width: '100%' },
+  hero: { marginBottom: spacing['3xl'] },
+  heroTitle: { fontFamily: 'Manrope_800ExtraBold', fontSize: 28, lineHeight: 34, color: colors.onSurface, marginBottom: spacing.md },
+  heroAccent: { color: colors.secondary },
+  heroSub: { fontFamily: 'Inter_500Medium', fontSize: 15, lineHeight: 22, color: colors.onSurfaceVariant },
+  redirectBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: `${colors.secondary}14`, padding: spacing.md, borderRadius: radii.lg, marginBottom: spacing.lg },
+  redirectBannerText: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 20, color: colors.onSurface },
+  formBlock: { marginBottom: spacing.lg },
+  fieldLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: colors.onSurfaceVariant, marginBottom: spacing.md, marginLeft: 4 },
+  phoneRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },
+  countryChip: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.md, height: 64, borderRadius: radii.lg, backgroundColor: colors.surfaceContainerLow },
+  flag: { width: 24, height: 16, borderRadius: 2 },
+  dialCode: { fontFamily: 'Inter_600SemiBold', fontSize: 16, color: colors.onSurface },
+  phoneInputWrap: { flex: 1, height: 64, borderRadius: radii.lg, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', paddingHorizontal: spacing.lg, borderWidth: 1, borderColor: 'transparent' },
+  phoneInput: { fontFamily: 'Inter_600SemiBold', fontSize: 20, color: colors.onSurface, padding: 0 },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xl, paddingHorizontal: 4 },
+  infoIcon: { marginTop: 2 },
+  infoText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: colors.onSurfaceVariant },
+  errorText: { fontFamily: 'Inter_500Medium', fontSize: 14, color: colors.error, marginBottom: spacing.md },
+  actions: { marginTop: 'auto', paddingTop: spacing['2xl'] },
+  ctaTouchable: { width: '100%' },
+  ctaDisabled: { opacity: 0.45 },
+  ctaGradient: { height: 64, borderRadius: radii.full, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  ctaText: { fontFamily: 'Manrope_700Bold', fontSize: 18, color: colors.onSecondary },
 });
