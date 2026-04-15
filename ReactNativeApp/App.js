@@ -156,7 +156,10 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
       <SafeAreaProvider>
-        <StripeProvider publishableKey="pk_live_51RF1vSA5ckD2kd7M4w7D7m5FPVLiZNSjAUy1VcwulfDZOvmeLZ62RPK8igrgmhKmj34BtdXDO7CBZSPuWGjHjKin00yWltIKKh">
+        <StripeProvider
+          publishableKey="pk_live_51RF1vSA5ckD2kd7M4w7D7m5FPVLiZNSjAUy1VcwulfDZOvmeLZ62RPK8igrgmhKmj34BtdXDO7CBZSPuWGjHjKin00yWltIKKh"
+          merchantIdentifier="merchant.com.culinAILLC.settld"
+        >
           <AuthProvider>
             <NavigationContainer>
               <StatusBar style="dark" />

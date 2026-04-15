@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CardField, useStripe } from '@stripe/stripe-react-native';
+import { CardField, useStripe, usePlatformPay, PlatformPayButton } from '@stripe/stripe-react-native';
 import { colors, radii } from '../theme';
 import { paymentMethods as paymentMethodsApi } from '../services/api';
 
@@ -30,10 +30,61 @@ function TopBar({ insets, onBack }) {
 export default function AddPaymentMethodScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { confirmSetupIntent } = useStripe();
+  const { isPlatformPaySupported, confirmPlatformPaySetupIntent } = usePlatformPay();
   const onSuccess = route?.params?.onSuccess;
 
   const [cardComplete, setCardComplete] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [applePaySupported, setApplePaySupported] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const supported = await isPlatformPaySupported();
+      setApplePaySupported(supported);
+    })();
+  }, [isPlatformPaySupported]);
+
+  const handleApplePay = async () => {
+    setProcessing(true);
+    try {
+      const setupRes = await paymentMethodsApi.createSetupIntent();
+      const clientSecret = setupRes.data.client_secret;
+
+      if (!clientSecret) throw new Error('No client secret returned from server');
+
+      const { setupIntent, error } = await confirmPlatformPaySetupIntent(clientSecret, {
+        applePay: {
+          merchantCountryCode: 'US',
+        },
+      });
+
+      if (error) {
+        if (error.code !== 'Canceled') {
+          Alert.alert('Error', error.message);
+        }
+        setProcessing(false);
+        return;
+      }
+
+      if (setupIntent?.status !== 'Succeeded') {
+        Alert.alert('Setup failed', 'Unable to verify via Apple Pay. Please try again.');
+        setProcessing(false);
+        return;
+      }
+
+      const paymentMethodId = setupIntent.paymentMethodId;
+      await paymentMethodsApi.attachPaymentMethod(paymentMethodId);
+
+      Alert.alert('Success', 'Apple Pay added successfully!');
+      if (onSuccess) onSuccess();
+      navigation.goBack();
+    } catch (err) {
+      console.error('[AddPaymentMethod] Apple Pay error:', err);
+      Alert.alert('Error', err?.error?.message || 'Failed to set up Apple Pay');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const handleAddCard = async () => {
     if (!cardComplete) {
@@ -43,15 +94,11 @@ export default function AddPaymentMethodScreen({ navigation, route }) {
 
     setProcessing(true);
     try {
-      // Step 1: Create SetupIntent on backend
       const setupRes = await paymentMethodsApi.createSetupIntent();
       const clientSecret = setupRes.data.client_secret;
 
-      if (!clientSecret) {
-        throw new Error('No client secret returned from server');
-      }
+      if (!clientSecret) throw new Error('No client secret returned from server');
 
-      // Step 2: Confirm SetupIntent with Stripe
       const { setupIntent, error } = await confirmSetupIntent(clientSecret, {
         paymentMethodType: 'Card',
       });
@@ -68,16 +115,11 @@ export default function AddPaymentMethodScreen({ navigation, route }) {
         return;
       }
 
-      // Step 3: Attach payment method to customer on backend
       const paymentMethodId = setupIntent.paymentMethodId;
       await paymentMethodsApi.attachPaymentMethod(paymentMethodId);
 
       Alert.alert('Success', 'Payment method added successfully!');
-      
-      if (onSuccess) {
-        onSuccess();
-      }
-      
+      if (onSuccess) onSuccess();
       navigation.goBack();
     } catch (err) {
       console.error('[AddPaymentMethod] error:', err);
@@ -108,6 +150,24 @@ export default function AddPaymentMethodScreen({ navigation, route }) {
             Add a card to receive payments from your group. Your card info is securely stored by Stripe.
           </Text>
         </View>
+
+        {applePaySupported && (
+          <View style={styles.applePaySection}>
+            <PlatformPayButton
+              onPress={handleApplePay}
+              type={PlatformPayButton.Type.SetUp}
+              appearance={PlatformPayButton.Appearance.Black}
+              borderRadius={28}
+              style={styles.applePayButton}
+              disabled={processing}
+            />
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or pay with card</Text>
+              <View style={styles.dividerLine} />
+            </View>
+          </View>
+        )}
 
         <View style={styles.cardSection}>
           <Text style={styles.sectionLabel}>CARD DETAILS</Text>
@@ -230,6 +290,30 @@ const styles = StyleSheet.create({
     maxWidth: 320,
   },
 
+  applePaySection: {
+    marginBottom: 8,
+  },
+  applePayButton: {
+    height: 56,
+    width: '100%',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.outlineVariant,
+  },
+  dividerText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
+    marginHorizontal: 16,
+  },
   cardSection: {
     marginBottom: 24,
   },
