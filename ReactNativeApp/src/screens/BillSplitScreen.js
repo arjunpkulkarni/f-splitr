@@ -360,16 +360,54 @@ export default function BillSplitScreen({ navigation, route }) {
   const isOwner = bill != null && uid != null && String(bill.owner_id ?? bill.created_by) === uid;
 
   const handleWsUpdate = useCallback((data) => {
-    const map = {};
-    const idMap = {};
-    (data.assignments ?? []).forEach((a) => {
-      if (!map[a.receipt_item_id]) map[a.receipt_item_id] = [];
-      map[a.receipt_item_id].push(a.bill_member_id);
-      if (a.id) idMap[`${a.receipt_item_id}_${a.bill_member_id}`] = a.id;
-    });
-    setAssignmentMap(map);
-    setAssignmentIdMap(idMap);
-    if (data.members) setMembers(data.members);
+    const action = data?.action;
+
+    if (action === 'full_sync') {
+      const map = {};
+      const idMap = {};
+      (data.assignments ?? []).forEach((a) => {
+        if (!map[a.receipt_item_id]) map[a.receipt_item_id] = [];
+        map[a.receipt_item_id].push(a.bill_member_id);
+        if (a.id) idMap[`${a.receipt_item_id}_${a.bill_member_id}`] = a.id;
+      });
+      setAssignmentMap(map);
+      setAssignmentIdMap(idMap);
+      if (data.members) setMembers(data.members);
+      return;
+    }
+
+    const itemId = data?.receipt_item_id;
+    const memberId = data?.bill_member_id;
+    const assignId = data?.assignment_id;
+    if (!itemId || !memberId) return;
+
+    if (action === 'added') {
+      setAssignmentMap((prev) => {
+        const cur = prev[itemId] || [];
+        if (cur.includes(memberId)) return prev;
+        return { ...prev, [itemId]: [...cur, memberId] };
+      });
+      if (assignId) {
+        setAssignmentIdMap((prev) => ({ ...prev, [`${itemId}_${memberId}`]: assignId }));
+      }
+    } else if (action === 'removed') {
+      setAssignmentMap((prev) => {
+        const cur = prev[itemId] || [];
+        if (!cur.includes(memberId)) return prev;
+        return { ...prev, [itemId]: cur.filter((id) => id !== memberId) };
+      });
+      setAssignmentIdMap((prev) => {
+        const key = `${itemId}_${memberId}`;
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } else if (action === 'updated') {
+      if (assignId) {
+        setAssignmentIdMap((prev) => ({ ...prev, [`${itemId}_${memberId}`]: assignId }));
+      }
+    }
   }, []);
 
   useBillWebSocket(billId, handleWsUpdate);

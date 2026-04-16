@@ -4,13 +4,27 @@ import { getToken } from '../services/authStorage';
 import { BASE_URL } from '../services/api';
 
 const WS_BASE = BASE_URL.replace(/^http/, 'ws');
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 8;
 const BASE_DELAY_MS = 2000;
+const MAX_DELAY_MS = 30000;
+const PING_INTERVAL_MS = 25000;
+const STALE_THRESHOLD_MS = 35000;
+const LAST_RESORT_RETRY_MS = 60000;
 
-export default function useBillWebSocket(billId, onAssignmentUpdate) {
+export default function useBillWebSocket(billId, onMessage) {
   const wsRef = useRef(null);
   const retriesRef = useRef(0);
   const cancelledRef = useRef(false);
+  const pingTimerRef = useRef(null);
+  const staleTimerRef = useRef(null);
+  const lastMsgAtRef = useRef(Date.now());
+  const lastResortRef = useRef(null);
+
+  const clearTimers = useCallback(() => {
+    if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null; }
+    if (staleTimerRef.current) { clearInterval(staleTimerRef.current); staleTimerRef.current = null; }
+    if (lastResortRef.current) { clearTimeout(lastResortRef.current); lastResortRef.current = null; }
+  }, []);
 
   const connect = useCallback(async () => {
     if (!billId || cancelledRef.current) return;
@@ -25,17 +39,33 @@ export default function useBillWebSocket(billId, onAssignmentUpdate) {
 
       ws.onopen = () => {
         retriesRef.current = 0;
+        lastMsgAtRef.current = Date.now();
+
+        pingTimerRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, PING_INTERVAL_MS);
+
+        staleTimerRef.current = setInterval(() => {
+          if (Date.now() - lastMsgAtRef.current > STALE_THRESHOLD_MS) {
+            ws.close(4000, 'Stale connection');
+          }
+        }, STALE_THRESHOLD_MS);
       };
 
       ws.onmessage = (event) => {
         if (cancelledRef.current) return;
+        lastMsgAtRef.current = Date.now();
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'assignment_update') {
-            onAssignmentUpdate(msg.data);
+          if (msg.type === 'pong') return;
+          if (msg.type === 'ping') return;
+          if (msg.type === 'assignment_update' || msg.type === 'payment_update') {
+            onMessage(msg.data);
           }
         } catch {
-          // ignore malformed messages
+          // ignore malformed
         }
       };
 
@@ -43,19 +73,29 @@ export default function useBillWebSocket(billId, onAssignmentUpdate) {
 
       ws.onclose = () => {
         wsRef.current = null;
+        clearTimers();
         if (cancelledRef.current) return;
         if (retriesRef.current < MAX_RETRIES) {
-          const delay = BASE_DELAY_MS * Math.pow(2, retriesRef.current);
+          const raw = BASE_DELAY_MS * Math.pow(2, retriesRef.current);
+          const capped = Math.min(raw, MAX_DELAY_MS);
+          const jittered = capped * (0.5 + Math.random() * 0.5);
           retriesRef.current += 1;
           setTimeout(() => {
             if (!cancelledRef.current) connect();
-          }, delay);
+          }, jittered);
+        } else {
+          lastResortRef.current = setTimeout(() => {
+            if (!cancelledRef.current && !wsRef.current) {
+              retriesRef.current = 0;
+              connect();
+            }
+          }, LAST_RESORT_RETRY_MS);
         }
       };
     } catch {
       // token retrieval failed
     }
-  }, [billId, onAssignmentUpdate]);
+  }, [billId, onMessage, clearTimers]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -71,11 +111,12 @@ export default function useBillWebSocket(billId, onAssignmentUpdate) {
 
     return () => {
       cancelledRef.current = true;
+      clearTimers();
       sub.remove();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, clearTimers]);
 }
