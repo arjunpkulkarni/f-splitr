@@ -13,10 +13,12 @@ import {
   Modal,
   Clipboard,
   RefreshControl,
+  AppState,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, radii, shadows } from '../theme';
 import { bills as billsApi, assignments as assignmentsApi, receipts as receiptsApi, members as membersApi, paymentMethods as paymentMethodsApi } from '../services/api';
 import useBillWebSocket from '../hooks/useBillWebSocket';
@@ -507,32 +509,23 @@ export default function BillSplitScreen({ navigation, route }) {
   // ─── WebSocket: real-time updates ───────────────────────────────────────────
   const wsHandlers = useMemo(() => ({
     onConnected: () => {
-      console.log('[WS] Connected to bill', billId);
+      if (__DEV__) console.log('[WS] Connected to bill', billId);
       fetchSummary(true);
     },
-    onAssignmentUpdate: () => {
-      console.log('[WS] Assignment update received, fetching...');
-      fetchSummary();
-    },
-    onMemberJoined: () => {
-      console.log('[WS] Member joined, fetching...');
-      fetchSummary();
-    },
-    onPaymentComplete: () => {
-      console.log('[WS] Payment complete, fetching...');
-      if (__DEV__) console.log('[WS] Connected to bill', billId);
-    },
+    // All server-originated events bypass the 1s user-spam debounce by
+    // passing force=true. The debounce only exists to coalesce rapid user
+    // actions; server events are authoritative.
     onAssignmentUpdate: (data) => {
-      if (__DEV__) console.log('[WS] assignment_update received', data?.length, 'assignments');
-      fetchSummary();
+      if (__DEV__) console.log('[WS] assignment_update received', data);
+      fetchSummary(true);
     },
     onMemberJoined: (data) => {
-      if (__DEV__) console.log('[WS] member_joined:', data?.nickname);
-      fetchSummary();
+      if (__DEV__) console.log('[WS] member_joined:', data?.nickname ?? data);
+      fetchSummary(true);
     },
     onPaymentComplete: (data) => {
-      if (__DEV__) console.log('[WS] payment_complete:', data?.nickname);
-      fetchSummary();
+      if (__DEV__) console.log('[WS] payment_complete:', data);
+      fetchSummary(true);
     },
     onAuthError: (code) => {
       if (__DEV__) console.warn('[WS] Auth error, code:', code);
@@ -541,12 +534,30 @@ export default function BillSplitScreen({ navigation, route }) {
 
   const { connected: wsConnected } = useBillWebSocket(billId, wsHandlers);
 
-  // Fallback polling only when WebSocket is disconnected
+  // Real-time comes from the WebSocket. Poll only as a safety net when the
+  // socket is disconnected (e.g. flaky network).
   useEffect(() => {
     if (wsConnected) return;
     const poll = setInterval(() => fetchSummary(), 5000);
     return () => clearInterval(poll);
   }, [wsConnected, fetchSummary]);
+
+  // Refresh whenever the screen regains focus (e.g. coming back from
+  // ReviewPayment, AddPaymentMethod, or ScanReceipt).
+  useFocusEffect(
+    useCallback(() => {
+      fetchSummary(true);
+    }, [fetchSummary]),
+  );
+
+  // Refresh when the app returns from background — WebSocket events that
+  // fired while suspended are lost, so we need to re-fetch on resume.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') fetchSummary(true);
+    });
+    return () => sub.remove();
+  }, [fetchSummary]);
 
   const handleToggleMember = (itemId, memberId) => {
     const key = `${itemId}::${memberId}`;
@@ -557,25 +568,6 @@ export default function BillSplitScreen({ navigation, route }) {
     setAssignmentMap((prev) => {
       const list = prev[itemId] || [];
       return {
-    mutatingAssignment.current = true;
-    try {
-      if (has) {
-        const assignId = serverAssignmentIds.current[`${itemId}::${memberId}`];
-        if (assignId) {
-          await assignmentsApi.delete(billId, assignId);
-          delete serverAssignmentIds.current[`${itemId}::${memberId}`];
-        }
-      } else {
-        await assignmentsApi.create(billId, [
-          { receipt_item_id: itemId, bill_member_id: memberId, share_type: 'equal', share_value: 0 },
-        ]);
-      }
-      // Refresh from server to get accurate IDs and recalculated amounts
-      await fetchSummary(true);
-    } catch (err) {
-      if (__DEV__) console.warn('Assignment toggle failed, reverting:', err);
-      // Revert optimistic update on failure
-      setAssignmentMap((prev) => ({
         ...prev,
         [itemId]: has
           ? list.filter((id) => id !== memberId)
