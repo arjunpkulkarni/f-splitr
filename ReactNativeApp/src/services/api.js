@@ -1,34 +1,15 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { getToken, removeToken } from './authStorage';
 
-// Prefer explicit API URL when provided (e.g. physical device/Expo Go):
-// EXPO_PUBLIC_API_URL=http://192.168.x.x:8000
+// Always hit production. There's no local uvicorn running on the Expo host;
+// auto-detecting the dev host just resolved to the Mac's LAN/Tailscale IP and
+// crashed every request with Network Error. If you ever want to point at a
+// local backend, set EXPO_PUBLIC_API_URL=http://<your-ip>:8000 when starting
+// Expo (`EXPO_PUBLIC_API_URL=... npm start`).
 const EXPLICIT_BASE = (process.env.EXPO_PUBLIC_API_URL ?? '').trim();
 
-function getExpoDevHostBase() {
-  if (!__DEV__) return null;
-  const hostUri =
-    Constants.expoConfig?.hostUri ??
-    Constants.manifest2?.extra?.expoGo?.debuggerHost ??
-    Constants.manifest?.debuggerHost ??
-    null;
-  if (!hostUri || typeof hostUri !== 'string') return null;
-  const host = hostUri.split(':')[0]?.trim();
-  if (!host) return null;
-  return `http://${host}:8000`;
-}
-
-// Default local development hosts:
-// - Android emulator -> 10.0.2.2 maps to host localhost
-// - iOS simulator -> localhost resolves to host machine
-const DEV_BASE =
-  EXPLICIT_BASE ||
-  getExpoDevHostBase() ||
-  (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000');
-
-export const BASE_URL = __DEV__ ? DEV_BASE : 'https://api.settld.live';
+export const BASE_URL = EXPLICIT_BASE || 'https://api.settld.live';
 
 /** WebSocket origin derived from HTTP API base (no separate hardcoded host). */
 export function getWebSocketBaseUrl() {

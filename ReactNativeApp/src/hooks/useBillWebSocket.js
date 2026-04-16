@@ -33,10 +33,9 @@ export default function useBillWebSocket(billId, handlers = {}) {
         return;
       }
 
-      const url = `${WS_BASE}/bills/${billId}/ws?token=${token}`;
-      console.log(`[WS] Connecting to: ${url.replace(/token=[^&]*/, 'token=***')}`);
       const wsBase = getWebSocketBaseUrl();
       const url = `${wsBase}/bills/${billId}/ws?token=${encodeURIComponent(token)}`;
+      console.log(`[WS] Connecting to: ${url.replace(/token=[^&]*/, 'token=***')}`);
       const socket = new WebSocket(url);
 
       socket.onopen = () => {
@@ -60,7 +59,15 @@ export default function useBillWebSocket(billId, handlers = {}) {
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          const { event: eventType, data } = msg;
+          // Backend envelope key is `type` (as of the ws_manager refactor).
+          // Accept legacy `event` too so this keeps working if the server ever
+          // flips back.
+          const eventType = msg.type ?? msg.event;
+          const { data } = msg;
+
+          if (__DEV__) {
+            console.log(`[WS] received ${eventType}`, data);
+          }
 
           switch (eventType) {
             case 'assignment_update':
@@ -72,11 +79,18 @@ export default function useBillWebSocket(billId, handlers = {}) {
             case 'payment_complete':
               handlersRef.current.onPaymentComplete?.(data);
               break;
+            case 'pong':
+              break;
             default:
+              if (__DEV__) {
+                console.log(`[WS] unknown event type: ${eventType}`);
+              }
               break;
           }
-        } catch {
-          // ignore malformed messages
+        } catch (err) {
+          if (__DEV__) {
+            console.warn('[WS] failed to parse message', err, event.data);
+          }
         }
       };
 
