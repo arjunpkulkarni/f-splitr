@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { colors, radii, shadows, spacing } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
-import { bills, dashboard as dashboardApi } from '../services/api';
+import { bills } from '../services/api';
+import {
+  useGetDashboardOverviewQuery,
+  useGetActiveBillsQuery,
+} from '../store/api';
+import LazyImage from '../components/LazyImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -73,7 +78,7 @@ function formatRelativeTime(timestamp) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function TopAppBar({ insets, user, onJoinBill }) {
+function TopAppBar({ insets, user }) {
   const { logout } = useAuth();
 
   const displayName =
@@ -105,7 +110,11 @@ function TopAppBar({ insets, user, onJoinBill }) {
         <View style={styles.profileRow}>
           <View style={styles.avatarContainer}>
             {user?.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={styles.profileAvatar} />
+              <LazyImage
+                source={{ uri: user.avatar_url }}
+                style={styles.profileAvatar}
+                fallbackIcon="person"
+              />
             ) : (
               <View style={[styles.profileAvatar, styles.initialsAvatar]}>
                 <Text style={styles.initialsText}>{initials}</Text>
@@ -123,14 +132,6 @@ function TopAppBar({ insets, user, onJoinBill }) {
           <TouchableOpacity
             style={styles.iconButtonWrap}
             activeOpacity={0.7}
-            onPress={onJoinBill}
-            accessibilityLabel="Join Bill"
-          >
-            <MaterialIcons name="group-add" size={24} color={colors.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.iconButtonWrap}
-            activeOpacity={0.7}
             onPress={onLogout}
             accessibilityLabel="Log out"
           >
@@ -142,7 +143,7 @@ function TopAppBar({ insets, user, onJoinBill }) {
   );
 }
 
-function BalanceHero({ overview }) {
+function BalanceHero({ overview, isLoading }) {
   const owedToYou = parseFloat(overview?.total_owed_to_you ?? 0);
   const youOwe = parseFloat(overview?.total_you_owe ?? 0);
   const net = owedToYou - youOwe;
@@ -153,16 +154,26 @@ function BalanceHero({ overview }) {
   return (
     <View style={styles.balanceHero}>
       <Text style={styles.balanceLabel}>Current Balance</Text>
-      <Text style={styles.balanceAmount}>
-        {net < 0 ? '-' : ''}{formatCurrency(net)}
-      </Text>
-      <View style={styles.badgeRow}>
-        <View style={[styles.weeklyBadge, net < 0 && styles.weeklyBadgeNegative]}>
-          <Text style={[styles.weeklyBadgeText, net < 0 && styles.weeklyBadgeTextNegative]}>
-            {badgeText}
-          </Text>
+      {isLoading ? (
+        // Reserve the same vertical space the real amount would take so the
+        // badge below doesn't jump when data arrives.
+        <View style={styles.balanceLoader}>
+          <ActivityIndicator size="large" color={colors.secondary} />
         </View>
-      </View>
+      ) : (
+        <>
+          <Text style={styles.balanceAmount}>
+            {net < 0 ? '-' : ''}{formatCurrency(net)}
+          </Text>
+          <View style={styles.badgeRow}>
+            <View style={[styles.weeklyBadge, net < 0 && styles.weeklyBadgeNegative]}>
+              <Text style={[styles.weeklyBadgeText, net < 0 && styles.weeklyBadgeTextNegative]}>
+                {badgeText}
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -254,7 +265,23 @@ function SecondaryBillCard({ bill }) {
   );
 }
 
-function ActiveBillsSection({ bills, onSettle }) {
+function ActiveBillsSection({ bills, onSettle, isLoading }) {
+  // While the backend is cold-starting, show a card-shaped spinner so the
+  // page layout stays stable instead of collapsing to an empty state.
+  if (isLoading) {
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Active Bills</Text>
+        </View>
+        <View style={[styles.loadingCard, shadows.card]}>
+          <ActivityIndicator size="large" color={colors.secondary} />
+          <Text style={styles.loadingText}>Loading your bills…</Text>
+        </View>
+      </View>
+    );
+  }
+
   if (!bills || bills.length === 0) {
     return (
       <View style={styles.section}>
@@ -389,36 +416,36 @@ export default function DashboardScreen({ navigation }) {
   const tabBarHeight = useBottomTabBarHeight();
   const { user } = useAuth();
 
-  const [overview, setOverview] = useState(null);
-  const [activeBills, setActiveBills] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // RTK Query handles caching, deduplication, and refetch-on-focus for us.
+  // The two hooks run in parallel; initial render only shows the skeleton
+  // once (on cold-open) and re-renders hit the cache instantly.
+  const {
+    data: overview,
+    isLoading: overviewLoading,
+    refetch: refetchOverview,
+  } = useGetDashboardOverviewQuery();
+
+  const {
+    data: activeBills = [],
+    isLoading: billsLoading,
+    refetch: refetchBills,
+  } = useGetActiveBillsQuery();
+
+  // Per-section loading flags. We *don't* gate the whole page on these —
+  // the layout always renders so the user immediately sees their name,
+  // avatar, and the FAB, with inline spinners where data is still fetching.
+  const balanceLoading = overviewLoading && !overview;
+  const billsLoadingInline = billsLoading && activeBills.length === 0;
+  const recentActivity = [];
+
   const [refreshing, setRefreshing] = useState(false);
   const [creatingBill, setCreatingBill] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [overviewRes, billsRes] = await Promise.allSettled([
-        dashboardApi.getOverview(),
-        dashboardApi.getActiveBills(),
-      ]);
-      if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data);
-      if (billsRes.status === 'fulfilled') setActiveBills(billsRes.value.data ?? []);
-      // Recent activity intentionally left empty until backend returns real data
-    } catch {
-      // silently fail — show whatever data we have
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData().finally(() => setLoading(false));
-  }, [fetchData]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await Promise.all([refetchOverview(), refetchBills()]);
     setRefreshing(false);
-  }, [fetchData]);
+  }, [refetchOverview, refetchBills]);
 
   const handleSettle = (bill) => {
     navigation.navigate('BillSplit', { billId: bill.id });
@@ -444,21 +471,9 @@ export default function DashboardScreen({ navigation }) {
     }
   }, [creatingBill, navigation]);
 
-  if (loading) {
-    return (
-      <View style={[styles.root, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.secondary} />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.root}>
-      <TopAppBar
-        insets={insets}
-        user={user}
-        onJoinBill={() => navigation.navigate('JoinBill')}
-      />
+      <TopAppBar insets={insets} user={user} />
 
       <ScrollView
         style={styles.scroll}
@@ -475,8 +490,12 @@ export default function DashboardScreen({ navigation }) {
           />
         }
       >
-        <BalanceHero overview={overview} />
-        <ActiveBillsSection bills={activeBills} onSettle={handleSettle} />
+        <BalanceHero overview={overview} isLoading={balanceLoading} />
+        <ActiveBillsSection
+          bills={activeBills}
+          onSettle={handleSettle}
+          isLoading={billsLoadingInline}
+        />
         <RecentActivitySection
           activities={recentActivity}
           onItemPress={(item) => {
@@ -630,6 +649,13 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     color: colors.onSurface,
   },
+  // 84px ≈ the combined height of the $48 amount + the badge row below it,
+  // so swapping spinner → real content doesn't shift the page.
+  balanceLoader: {
+    height: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badgeRow: {
     flexDirection: 'row',
     marginTop: 16,
@@ -695,6 +721,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     color: colors.outlineVariant,
+  },
+  // Same dimensions as the featured bill card below so the layout doesn't
+  // snap to a taller/shorter card when real data arrives.
+  loadingCard: {
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: radii.xl,
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  loadingText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
   },
 
   featuredCard: {

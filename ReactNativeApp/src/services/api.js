@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { getToken, removeToken } from './authStorage';
+import { offlineStorage } from './offlineStorage';
 
 // Always hit production. There's no local uvicorn running on the Expo host;
 // auto-detecting the dev host just resolved to the Mac's LAN/Tailscale IP and
@@ -50,6 +51,10 @@ function logAxiosFailure(error) {
   });
 }
 
+// Simple in-memory cache for GET requests
+const responseCache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
+
 const client = axios.create({
   baseURL: BASE_URL,
   timeout: 20_000,
@@ -61,12 +66,68 @@ client.interceptors.request.use(async (config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // Check cache for GET requests
+  if (config.method === 'get') {
+    const cacheKey = `${config.baseURL}${config.url}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return Promise.reject({
+        __cached: true,
+        data: cached.data
+      });
+    }
+  }
+  
   return config;
 });
 
 client.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    // Cache successful GET responses in both tiers: memory (fast) and
+    // AsyncStorage (survives app restart + offline).
+    if (response.config.method === 'get') {
+      const cacheKey = `${response.config.baseURL}${response.config.url}`;
+      responseCache.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+      // Fire-and-forget; don't block the response path on disk I/O.
+      offlineStorage.set(cacheKey, response.data, 24 * 60 * 60 * 1000).catch(() => {});
+    }
+    return response.data;
+  },
   async (error) => {
+    // Handle cached response
+    if (error.__cached) {
+      return Promise.resolve(error.data);
+    }
+
+    // When the network fails on a GET, fall back to AsyncStorage so the UI
+    // can render with the last known-good data instead of an error screen.
+    // We only do this for network errors (not 4xx/5xx) — those indicate the
+    // server has an opinion and we should surface it, not serve stale data.
+    const isNetworkError =
+      error.message === 'Network Error' ||
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ECONNREFUSED' ||
+      !error.response;
+
+    if (isNetworkError && error.config?.method === 'get') {
+      const cacheKey = `${error.config.baseURL}${error.config.url}`;
+      try {
+        const cached = await offlineStorage.get(cacheKey, { allowStale: true });
+        if (cached?.data) {
+          if (__DEV__) {
+            console.log(`[API] Serving stale cache for ${error.config.url} (offline)`);
+          }
+          return Promise.resolve(cached.data);
+        }
+      } catch {
+        // fall through to the normal error path
+      }
+    }
+
     logAxiosFailure(error);
     if (error.response?.status === 401) {
       await removeToken();

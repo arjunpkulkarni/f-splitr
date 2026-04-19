@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  Image,
   TouchableOpacity,
   StyleSheet,
   Platform,
@@ -11,6 +10,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows } from '../theme';
+import LazyImage from '../components/LazyImage';
 
 const PROFILE_URL =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuA4Q8bK2N4eUmRk0_HtgWnKovg1C-O7rnE-YOCak6s0g_jDIWWg422kEwBvDK6B6splBGWbYH6zOJCIDhXKF8LEun1U_uKD0aUWkgU4eUloundcAQ3YoYXtBql3yONRjv7RgRBx5kkdVZp1EIh9bE9efd5o3cHnEDcmuwsJYEXr1undNZ-QU4uki8rEEUBAeIhDOXx7wrXCCbfiUSNTpvGwETMoNCtdoxySp-72maId718X0-PQ7I-3lCwny0IzohU_CBfFR9Rx';
@@ -85,7 +85,7 @@ function TopAppBar({ insets }) {
       <View style={styles.topBarInner}>
         <View style={styles.headerLeft}>
           <View style={styles.avatarContainer}>
-            <Image source={{ uri: PROFILE_URL }} style={styles.profileAvatar} />
+            <LazyImage source={{ uri: PROFILE_URL }} style={styles.profileAvatar} fallbackIcon="person" />
           </View>
           <Text style={styles.appTitle}>WealthSplit</Text>
         </View>
@@ -143,7 +143,7 @@ function ParticipantCard({ participant }) {
     <View style={styles.participantCard}>
       <View style={styles.participantLeft}>
         <View style={styles.participantAvatarWrap}>
-          <Image source={{ uri: participant.avatar }} style={styles.participantAvatar} />
+          <LazyImage source={{ uri: participant.avatar }} style={styles.participantAvatar} fallbackIcon="person" />
         </View>
         <View>
           <Text style={styles.participantName}>{participant.name}</Text>

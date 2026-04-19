@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  Image,
   TouchableOpacity,
   StyleSheet,
   Platform,
@@ -14,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonActions } from '@react-navigation/native';
 import { colors, radii, shadows } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
+import LazyImage from '../components/LazyImage';
 
 function formatMoney(n) {
   const x = typeof n === 'string' ? parseFloat(n) : Number(n);
@@ -36,7 +36,11 @@ function TopAppBar({ insets, user }) {
         <View style={styles.headerRight}>
           <View style={styles.avatarWrap}>
             {user?.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+              <LazyImage
+                source={{ uri: user.avatar_url }}
+                style={styles.avatarImg}
+                fallbackIcon="person"
+              />
             ) : (
               <Text style={styles.avatarInitials}>{initials}</Text>
             )}

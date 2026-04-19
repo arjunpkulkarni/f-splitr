@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Image,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { colors, radii, shadows } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { users as usersApi } from '../services/api';
+import LazyImage from '../components/LazyImage';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -77,7 +77,12 @@ export default function ProfileScreen() {
             <View style={[styles.heroCard, shadows.card]}>
               <View style={styles.avatarLarge}>
                 {display?.avatar_url ? (
-                  <Image source={{ uri: display.avatar_url }} style={styles.avatarImg} />
+                  <LazyImage
+                    source={{ uri: display.avatar_url }}
+                    style={styles.avatarImg}
+                    fallbackIcon="person"
+                    fallbackIconSize={40}
+                  />
                 ) : (
                   <Text style={styles.avatarInitials}>{initials}</Text>
                 )}

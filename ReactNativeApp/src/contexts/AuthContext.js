@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi, unwrap, ApiError } from '../services/api';
 import { getToken, setToken, removeToken } from '../services/authStorage';
+import { offlineStorage } from '../services/offlineStorage';
 
 const AuthContext = createContext(null);
 
@@ -25,6 +26,10 @@ export function AuthProvider({ children }) {
         const stored = await getToken();
         setTokenState(stored);
         if (stored) {
+          // Immediately set loading to false if we have a token
+          // The user will see the app faster, and we'll update user data in background
+          setIsLoading(false);
+          
           try {
             await refreshMe();
           } catch (e) {
@@ -38,13 +43,14 @@ export function AuthProvider({ children }) {
               setNeedsOnboarding(false);
             }
           }
+        } else {
+          setIsLoading(false);
         }
       } catch {
         await removeToken();
         setTokenState(null);
         setUser(null);
         setNeedsOnboarding(false);
-      } finally {
         setIsLoading(false);
       }
     })();
@@ -91,6 +97,9 @@ export function AuthProvider({ children }) {
       // ignore — clear local state regardless
     }
     await removeToken();
+    // Wipe cached API responses so the next user on this device can't see
+    // the previous user's bills, balances, etc.
+    await offlineStorage.clear();
     setTokenState(null);
     setUser(null);
     setNeedsOnboarding(false);
